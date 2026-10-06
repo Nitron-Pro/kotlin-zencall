@@ -43,6 +43,16 @@
             </intent-filter>
         </activity>
 
+        <!-- ZenCall Native Call Screening Service -->
+        <service
+            android:name="pro.nitron.zencall.call.ZenCallScreeningService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE" >
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="pro.nitron.zencall.debug.androidx-startup"

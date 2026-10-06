@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="pro.nitron.zencall.FirewallEngineUnitTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-06T23:37:32" hostname="DESKTOP-CUS4K8L" time="0.016">
+  <properties/>
+  <testcase name="normalizeNumber_stripsSpecialCharacters" classname="pro.nitron.zencall.FirewallEngineUnitTest" time="0.012"/>
+  <testcase name="disabledFirewall_allowsAnyCall" classname="pro.nitron.zencall.FirewallEngineUnitTest" time="0.002"/>
+  <testcase name="blacklist_matches_normalized" classname="pro.nitron.zencall.FirewallEngineUnitTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

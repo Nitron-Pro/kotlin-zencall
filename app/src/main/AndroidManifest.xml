@@ -27,6 +27,16 @@
             </intent-filter>
         </activity>
 
+        <!-- ZenCall Native Call Screening Service -->
+        <service
+            android:name=".call.ZenCallScreeningService"
+            android:permission="android.permission.BIND_SCREENING_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

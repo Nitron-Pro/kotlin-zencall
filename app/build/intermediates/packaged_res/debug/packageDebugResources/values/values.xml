@@ -11,5 +11,9 @@
     <string name="app_subtitle">Smart Call Firewall</string>
     <string name="firewall_active">Firewall is Active</string>
     <string name="firewall_inactive">Firewall is Inactive</string>
-    <style name="Theme.ZenCall" parent="android:Theme.Material.Light.NoActionBar"/>
+    <style name="Theme.ZenCall" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF0F172A</item>
+        <item name="android:statusBarColor">#FF0F172A</item>
+        <item name="android:navigationBarColor">#FF0F172A</item>
+    </style>
 </resources>
