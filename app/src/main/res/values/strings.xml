@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">ZenCall</string>
+    <string name="app_subtitle">Smart Call Firewall</string>
+    <string name="firewall_active">Firewall is Active</string>
+    <string name="firewall_inactive">Firewall is Inactive</string>
+</resources>
