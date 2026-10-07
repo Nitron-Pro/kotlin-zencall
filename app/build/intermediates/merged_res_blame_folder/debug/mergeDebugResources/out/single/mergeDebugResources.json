@@ -4,24 +4,32 @@
         "source": "pro.nitron.zencall.app-main-53:/mipmap-xhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "pro.nitron.zencall.app-debug-51:/mipmap-mdpi_ic_launcher.png.flat",
-        "source": "pro.nitron.zencall.app-main-53:/mipmap-mdpi/ic_launcher.png"
-    },
-    {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-xxhdpi_ic_launcher.png.flat",
         "source": "pro.nitron.zencall.app-main-53:/mipmap-xxhdpi/ic_launcher.png"
-    },
-    {
-        "merged": "pro.nitron.zencall.app-debug-51:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
-        "source": "pro.nitron.zencall.app-main-53:/mipmap-xxxhdpi/ic_launcher_round.png"
     },
     {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-hdpi_ic_launcher.png.flat",
         "source": "pro.nitron.zencall.app-main-53:/mipmap-hdpi/ic_launcher.png"
     },
     {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-xxxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-hdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-anydpi-v26\\ic_launcher_round.xml"
+    },
+    {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-xhdpi_ic_launcher.png.flat",
         "source": "pro.nitron.zencall.app-main-53:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-xxxhdpi\\ic_launcher_round.png"
     },
     {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-xxxhdpi_ic_launcher.png.flat",
@@ -32,12 +40,56 @@
         "source": "pro.nitron.zencall.app-main-53:/mipmap-mdpi/ic_launcher_round.png"
     },
     {
-        "merged": "pro.nitron.zencall.app-debug-51:/drawable_ic_launcher_background.xml.flat",
-        "source": "pro.nitron.zencall.app-main-53:/drawable/ic_launcher_background.xml"
-    },
-    {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-anydpi-v26_ic_launcher.xml.flat",
         "source": "pro.nitron.zencall.app-main-53:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\drawable_ic_launcher_background.xml.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\drawable\\ic_launcher_background.xml"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-anydpi-v26\\ic_launcher.xml"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-mdpi_ic_launcher.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-mdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-hdpi_ic_launcher.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-hdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "pro.nitron.zencall.app-debug-51:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "pro.nitron.zencall.app-main-53:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-xhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-mdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "pro.nitron.zencall.app-debug-51:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "pro.nitron.zencall.app-main-53:/mipmap-xxxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\drawable_ic_zencall_logo.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\drawable\\ic_zencall_logo.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-xxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-xxhdpi\\ic_launcher_round.png"
+    },
+    {
+        "merged": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-debug-51:\\mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "D:\\Android\\.gradle\\daemon\\8.10.2\\pro.nitron.zencall.app-main-53:\\mipmap-xhdpi\\ic_launcher_round.png"
     },
     {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-xxhdpi_ic_launcher_round.png.flat",
@@ -48,11 +100,11 @@
         "source": "pro.nitron.zencall.app-main-53:/drawable/ic_zencall_logo.png"
     },
     {
-        "merged": "pro.nitron.zencall.app-debug-51:/mipmap-hdpi_ic_launcher_round.png.flat",
-        "source": "pro.nitron.zencall.app-main-53:/mipmap-hdpi/ic_launcher_round.png"
-    },
-    {
         "merged": "pro.nitron.zencall.app-debug-51:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
         "source": "pro.nitron.zencall.app-main-53:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "pro.nitron.zencall.app-debug-51:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "pro.nitron.zencall.app-main-53:/mipmap-hdpi/ic_launcher_round.png"
     }
 ]

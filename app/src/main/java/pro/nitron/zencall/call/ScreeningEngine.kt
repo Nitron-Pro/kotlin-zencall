@@ -5,10 +5,17 @@ import android.net.Uri
 import android.provider.ContactsContract
 import pro.nitron.zencall.data.prefs.FirewallConfigSnapshot
 import pro.nitron.zencall.data.prefs.FirewallMode
-import pro.nitron.zencall.data.prefs.FirewallPreferences
+import pro.nitron.zencall.domain.engine.CallDecisionEngine
+import pro.nitron.zencall.domain.model.CallAction
+import pro.nitron.zencall.domain.model.CallMode
+import pro.nitron.zencall.domain.model.CallRule
+import pro.nitron.zencall.domain.model.CallerCategory
+import pro.nitron.zencall.domain.model.CallerIdentity
+import pro.nitron.zencall.domain.util.CallNumberNormalizer
 
 sealed class ScreeningDecision {
     data object Allow : ScreeningDecision()
+    data class Silence(val reason: String) : ScreeningDecision()
     data class Block(
         val reason: String,
         val shouldDisallowCall: Boolean = true,
@@ -20,78 +27,70 @@ sealed class ScreeningDecision {
 
 class ScreeningEngine(private val context: Context) {
 
+    private val normalizer = CallNumberNormalizer(defaultCountryIso = "IR", defaultCountryPrefix = "98")
+    private val domainEngine = CallDecisionEngine()
+
     fun evaluate(rawNumber: String?, snapshot: FirewallConfigSnapshot): ScreeningDecision {
-        if (!snapshot.isEnabled) {
-            return ScreeningDecision.Allow
-        }
+        val normalized = normalizer.normalize(rawNumber)
+        val isContact = if (normalized != null) isNumberInContacts(context, normalized) else false
+        val isAllowed = snapshot.whitelist.any { normalizer.matches(it, rawNumber) }
+        val isBlocked = snapshot.blacklist.any { normalizer.matches(it, rawNumber) }
 
-        // 1. Private / Hidden / Anonymous Number Check
-        val isPrivate = rawNumber.isNullOrBlank() || rawNumber.equals("UNKNOWN", ignoreCase = true) || rawNumber.equals("PRIVATE", ignoreCase = true)
-        if (isPrivate) {
-            return if (snapshot.blockPrivateNumbers) {
-                ScreeningDecision.Block(
-                    reason = "Private / Unknown Caller ID",
-                    shouldSkipNotification = snapshot.silentDrop
-                )
-            } else {
-                ScreeningDecision.Allow
-            }
-        }
+        val caller = CallerIdentity(
+            rawNumber = rawNumber,
+            normalizedNumber = normalized,
+            isContact = isContact,
+            isFavorite = false,
+            isBlockedList = isBlocked,
+            isAllowedList = isAllowed
+        )
 
-        val normalized = FirewallPreferences.normalizeNumber(rawNumber)
+        // Map preferences to domain CallMode
+        val domainMode = createDomainMode(snapshot)
+        val decision = domainEngine.decide(caller, domainMode)
 
-        // 2. Whitelist Check (always highest priority)
-        if (snapshot.whitelist.any { matchesNumber(it, normalized) }) {
-            return ScreeningDecision.Allow
-        }
-
-        // 3. Blacklist Check
-        if (snapshot.blacklist.any { matchesNumber(it, normalized) }) {
-            return ScreeningDecision.Block(
-                reason = "Matched Blacklist",
+        return when (decision.action) {
+            CallAction.ALLOW -> ScreeningDecision.Allow
+            CallAction.SILENCE -> ScreeningDecision.Silence(decision.reason)
+            CallAction.REJECT -> ScreeningDecision.Block(
+                reason = decision.reason,
+                shouldDisallowCall = true,
+                shouldRejectCall = true,
                 shouldSkipNotification = snapshot.silentDrop
             )
         }
-
-        // 4. Mode-based Evaluation
-        return when (snapshot.mode) {
-            FirewallMode.ALLOW_ALL -> {
-                ScreeningDecision.Allow
-            }
-            FirewallMode.BLOCK_BLACKLIST -> {
-                // If not in blacklist, allow
-                ScreeningDecision.Allow
-            }
-            FirewallMode.BLOCK_UNKNOWN, FirewallMode.BLOCK_ALL_EXCEPT_CONTACTS -> {
-                val isContact = isNumberInContacts(context, normalized)
-                if (isContact) {
-                    ScreeningDecision.Allow
-                } else {
-                    ScreeningDecision.Block(
-                        reason = "Non-contact Number (Firewall Active)",
-                        shouldSkipNotification = snapshot.silentDrop
-                    )
-                }
-            }
-            FirewallMode.BLOCK_ALL -> {
-                ScreeningDecision.Block(
-                    reason = "Block All Calls Mode Active",
-                    shouldSkipNotification = snapshot.silentDrop
-                )
-            }
-        }
     }
 
-    private fun matchesNumber(pattern: String, candidate: String): Boolean {
-        val normPattern = FirewallPreferences.normalizeNumber(pattern)
-        if (candidate == normPattern) return true
-        // Allow suffix match for country codes e.g., 0912... vs +98912...
-        if (candidate.length >= 7 && normPattern.length >= 7) {
-            val suffixCandidate = candidate.takeLast(7)
-            val suffixPattern = normPattern.takeLast(7)
-            return suffixCandidate == suffixPattern
+    private fun createDomainMode(snapshot: FirewallConfigSnapshot): CallMode {
+        val rules = mutableListOf<CallRule>()
+
+        when (snapshot.mode) {
+            FirewallMode.ALLOW_ALL -> {
+                rules.add(CallRule("all", "active", CallerCategory.UNKNOWN, CallAction.ALLOW))
+            }
+            FirewallMode.BLOCK_BLACKLIST -> {
+                rules.add(CallRule("bl", "active", CallerCategory.BLOCKED_NUMBER, CallAction.REJECT))
+                rules.add(CallRule("un", "active", CallerCategory.UNKNOWN, CallAction.ALLOW))
+            }
+            FirewallMode.BLOCK_UNKNOWN, FirewallMode.BLOCK_ALL_EXCEPT_CONTACTS -> {
+                rules.add(CallRule("wl", "active", CallerCategory.ALLOWED_NUMBER, CallAction.ALLOW))
+                rules.add(CallRule("bl", "active", CallerCategory.BLOCKED_NUMBER, CallAction.REJECT))
+                rules.add(CallRule("ct", "active", CallerCategory.CONTACT, CallAction.ALLOW))
+                rules.add(CallRule("un", "active", CallerCategory.UNKNOWN, CallAction.REJECT))
+            }
+            FirewallMode.BLOCK_ALL -> {
+                rules.add(CallRule("wl", "active", CallerCategory.ALLOWED_NUMBER, CallAction.ALLOW))
+                rules.add(CallRule("all", "active", CallerCategory.UNKNOWN, CallAction.REJECT))
+            }
         }
-        return false
+
+        return CallMode(
+            id = "active_mode",
+            name = snapshot.mode.name,
+            isEnabled = snapshot.isEnabled,
+            defaultAction = if (snapshot.mode == FirewallMode.ALLOW_ALL) CallAction.ALLOW else CallAction.REJECT,
+            rules = rules
+        )
     }
 
     private fun isNumberInContacts(context: Context, number: String): Boolean {
@@ -105,7 +104,6 @@ class ScreeningEngine(private val context: Context) {
                 cursor.count > 0
             } ?: false
         } catch (_: SecurityException) {
-            // If contact permission not granted, fail safe to allow or treat as non-contact based on policy
             false
         } catch (_: Exception) {
             false

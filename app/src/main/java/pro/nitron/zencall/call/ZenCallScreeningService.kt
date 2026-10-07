@@ -45,6 +45,13 @@ class ZenCallScreeningService : CallScreeningService() {
                         responseBuilder.setSkipNotification(false)
                         Log.i(TAG, "Screening result: ALLOWED call from $rawNumber")
                     }
+                    is ScreeningDecision.Silence -> {
+                        responseBuilder.setDisallowCall(false)
+                        responseBuilder.setRejectCall(false)
+                        responseBuilder.setSilenceCall(true)
+                        responseBuilder.setSkipNotification(true)
+                        Log.i(TAG, "Screening result: SILENCED call from $rawNumber (Reason: ${decision.reason})")
+                    }
                     is ScreeningDecision.Block -> {
                         responseBuilder.setDisallowCall(decision.shouldDisallowCall)
                         responseBuilder.setRejectCall(decision.shouldRejectCall)
