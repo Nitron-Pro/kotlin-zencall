@@ -13,12 +13,10 @@ import pro.nitron.zencall.data.prefs.FirewallPreferences
 class ZenCallScreeningService : CallScreeningService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private lateinit var preferences: FirewallPreferences
     private lateinit var engine: ScreeningEngine
 
     override fun onCreate() {
         super.onCreate()
-        preferences = FirewallPreferences(applicationContext)
         engine = ScreeningEngine(applicationContext)
         Log.i(TAG, "ZenCallScreeningService initialized")
     }
@@ -32,8 +30,7 @@ class ZenCallScreeningService : CallScreeningService() {
 
         serviceScope.launch {
             try {
-                val snapshot = preferences.getSnapshot()
-                val decision = engine.evaluate(rawNumber, snapshot)
+                val decision = engine.evaluateFromRepository(rawNumber)
 
                 val responseBuilder = CallResponse.Builder()
 

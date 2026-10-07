@@ -2,13 +2,13 @@ package pro.nitron.zencall.domain.engine
 
 import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallMode
-import pro.nitron.zencall.domain.model.CallerCategory
 import pro.nitron.zencall.domain.model.CallerIdentity
+import pro.nitron.zencall.domain.model.SystemCategories
 
 data class DecisionResult(
     val action: CallAction,
     val reason: String,
-    val matchedCategory: CallerCategory? = null,
+    val matchedCategoryId: String? = null,
     val evaluationTimeMs: Long = 0
 )
 
@@ -42,66 +42,82 @@ class CallDecisionEngine(
 
         // 2. Explicit Allowed List (Whitelist) has top priority
         if (caller.isAllowedList) {
-            val rule = activeMode.rules.firstOrNull { it.category == CallerCategory.ALLOWED_NUMBER }
+            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.ALLOWED_NUMBER }
             val action = rule?.action ?: CallAction.ALLOW
             return DecisionResult(
                 action = action,
                 reason = "Caller is in Allowed list",
-                matchedCategory = CallerCategory.ALLOWED_NUMBER,
+                matchedCategoryId = SystemCategories.ALLOWED_NUMBER,
                 evaluationTimeMs = System.currentTimeMillis() - start
             )
         }
 
         // 3. Explicit Blocked List (Blacklist) has second priority
         if (caller.isBlockedList) {
-            val rule = activeMode.rules.firstOrNull { it.category == CallerCategory.BLOCKED_NUMBER }
+            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.BLOCKED_NUMBER }
             val action = rule?.action ?: CallAction.REJECT
             return DecisionResult(
                 action = action,
                 reason = "Caller is in Blocked list",
-                matchedCategory = CallerCategory.BLOCKED_NUMBER,
+                matchedCategoryId = SystemCategories.BLOCKED_NUMBER,
                 evaluationTimeMs = System.currentTimeMillis() - start
             )
         }
 
-        // 4. Favorite Contact Check
+        // 4. Custom User-Created Categories Check (sorted by rule priority descending)
+        if (caller.customCategoryIds.isNotEmpty()) {
+            val matchingCustomRule = activeMode.rules
+                .filter { it.categoryId in caller.customCategoryIds }
+                .maxByOrNull { it.priority }
+
+            if (matchingCustomRule != null) {
+                return DecisionResult(
+                    action = matchingCustomRule.action,
+                    reason = "Caller matched custom user category: ${matchingCustomRule.categoryId}",
+                    matchedCategoryId = matchingCustomRule.categoryId,
+                    evaluationTimeMs = System.currentTimeMillis() - start
+                )
+            }
+        }
+
+        // 5. Favorite Contact Check
         if (caller.isFavorite) {
-            val rule = activeMode.rules.firstOrNull { it.category == CallerCategory.FAVORITE }
+            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.FAVORITE }
             if (rule != null) {
                 return DecisionResult(
                     action = rule.action,
                     reason = "Caller is a favorite contact",
-                    matchedCategory = CallerCategory.FAVORITE,
+                    matchedCategoryId = SystemCategories.FAVORITE,
                     evaluationTimeMs = System.currentTimeMillis() - start
                 )
             }
         }
 
-        // 5. General Contact Check
+        // 6. General Contact Check
         if (caller.isContact) {
-            val rule = activeMode.rules.firstOrNull { it.category == CallerCategory.CONTACT }
+            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.CONTACT }
             if (rule != null) {
                 return DecisionResult(
                     action = rule.action,
                     reason = "Caller is in contacts",
-                    matchedCategory = CallerCategory.CONTACT,
+                    matchedCategoryId = SystemCategories.CONTACT,
                     evaluationTimeMs = System.currentTimeMillis() - start
                 )
             }
         }
 
-        // 6. Unknown / Non-contact / Private Number Check
-        val unknownRule = activeMode.rules.firstOrNull { it.category == CallerCategory.UNKNOWN }
+        // 7. Unknown / Non-contact / Private Number Check
+        val unknownRule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.UNKNOWN }
         if (unknownRule != null) {
             return DecisionResult(
                 action = unknownRule.action,
                 reason = if (caller.isPrivateOrUnknown) "Caller ID is hidden/private" else "Caller is unknown",
-                matchedCategory = CallerCategory.UNKNOWN,
+                matchedCategoryId = SystemCategories.UNKNOWN,
                 evaluationTimeMs = System.currentTimeMillis() - start
             )
         }
 
-        // 7. Fallback to Mode's default action
+        // 8. Fallback to Mode's default action
         return DecisionResult(
             action = activeMode.defaultAction,
             reason = "Default action of mode '${activeMode.name}'",

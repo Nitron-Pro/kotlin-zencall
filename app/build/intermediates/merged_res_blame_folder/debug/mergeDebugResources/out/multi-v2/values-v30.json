@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "pro.nitron.zencall.app-mergeDebugResources-49:/values-v30/values-v30.xml",
+            "outputFile": "pro.nitron.zencall.app-mergeDebugResources-53:/values-v30/values-v30.xml",
             "map": [
                 {
-                    "source": "D:\\Android\\.gradle\\caches\\8.10.2\\transforms\\71f19ba178734e2077e5015d36b7a84e\\transformed\\material3-release\\res\\values-v30\\values-v30.xml",
+                    "source": "D:\\Android\\.gradle\\caches\\8.10.2\\transforms\\b45f1f2a2a4a89c59b77f3ef3d2c4c29\\transformed\\material3-release\\res\\values-v30\\values-v30.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",

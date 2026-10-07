@@ -30,9 +30,24 @@ class FirewallPreferences(private val context: Context) {
         val KEY_SILENT_DROP = booleanPreferencesKey("silent_drop")
         val KEY_SKIP_CALL_LOG = booleanPreferencesKey("skip_call_log")
         val KEY_SKIP_NOTIFICATION = booleanPreferencesKey("skip_notification")
+        val KEY_ACTIVE_MODE_ID = stringPreferencesKey("active_mode_id")
 
         fun normalizeNumber(raw: String): String {
             return raw.replace(Regex("[^0-9+]"), "").trim()
+        }
+    }
+
+    val activeModeIdFlow: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_ACTIVE_MODE_ID]
+    }
+
+    suspend fun getActiveModeId(): String? {
+        return context.dataStore.data.first()[KEY_ACTIVE_MODE_ID]
+    }
+
+    suspend fun setActiveModeId(modeId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_ACTIVE_MODE_ID] = modeId
         }
     }
 

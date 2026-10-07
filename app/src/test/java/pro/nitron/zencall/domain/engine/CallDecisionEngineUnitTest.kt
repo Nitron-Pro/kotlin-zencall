@@ -8,8 +8,8 @@ import org.junit.Test
 import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallMode
 import pro.nitron.zencall.domain.model.CallRule
-import pro.nitron.zencall.domain.model.CallerCategory
 import pro.nitron.zencall.domain.model.CallerIdentity
+import pro.nitron.zencall.domain.model.SystemCategories
 import pro.nitron.zencall.domain.util.CallNumberNormalizer
 
 class CallDecisionEngineUnitTest {
@@ -61,9 +61,9 @@ class CallDecisionEngineUnitTest {
             name = "Personal",
             isEnabled = true,
             rules = listOf(
-                CallRule("r1", "personal", CallerCategory.ALLOWED_NUMBER, CallAction.ALLOW),
-                CallRule("r2", "personal", CallerCategory.BLOCKED_NUMBER, CallAction.REJECT),
-                CallRule("r3", "personal", CallerCategory.UNKNOWN, CallAction.REJECT)
+                CallRule("r1", "personal", SystemCategories.ALLOWED_NUMBER, CallAction.ALLOW),
+                CallRule("r2", "personal", SystemCategories.BLOCKED_NUMBER, CallAction.REJECT),
+                CallRule("r3", "personal", SystemCategories.UNKNOWN, CallAction.REJECT)
             )
         )
 
@@ -76,7 +76,7 @@ class CallDecisionEngineUnitTest {
 
         val result = engine.decide(caller, personalMode)
         assertEquals(CallAction.ALLOW, result.action)
-        assertEquals(CallerCategory.ALLOWED_NUMBER, result.matchedCategory)
+        assertEquals(SystemCategories.ALLOWED_NUMBER, result.matchedCategoryId)
     }
 
     @Test
@@ -86,8 +86,8 @@ class CallDecisionEngineUnitTest {
             name = "Work",
             isEnabled = true,
             rules = listOf(
-                CallRule("r1", "work", CallerCategory.BLOCKED_NUMBER, CallAction.REJECT),
-                CallRule("r2", "work", CallerCategory.CONTACT, CallAction.ALLOW)
+                CallRule("r1", "work", SystemCategories.BLOCKED_NUMBER, CallAction.REJECT),
+                CallRule("r2", "work", SystemCategories.CONTACT, CallAction.ALLOW)
             )
         )
 
@@ -100,7 +100,44 @@ class CallDecisionEngineUnitTest {
 
         val result = engine.decide(caller, workMode)
         assertEquals(CallAction.REJECT, result.action)
-        assertEquals(CallerCategory.BLOCKED_NUMBER, result.matchedCategory)
+        assertEquals(SystemCategories.BLOCKED_NUMBER, result.matchedCategoryId)
+    }
+
+    @Test
+    fun `custom user-created categories evaluate correctly based on rule priority`() {
+        val customDeliveryCategoryId = "delivery_drivers"
+        val customFamilyCategoryId = "close_family"
+
+        val nightMode = CallMode(
+            id = "night",
+            name = "Night",
+            isEnabled = true,
+            rules = listOf(
+                CallRule("r1", "night", customFamilyCategoryId, CallAction.ALLOW, priority = 10),
+                CallRule("r2", "night", customDeliveryCategoryId, CallAction.SILENCE, priority = 5),
+                CallRule("r3", "night", SystemCategories.UNKNOWN, CallAction.REJECT, priority = 0)
+            )
+        )
+
+        // Caller belongs to custom user category "close_family"
+        val familyCaller = CallerIdentity(
+            rawNumber = "09120001122",
+            normalizedNumber = "+989120001122",
+            customCategoryIds = setOf(customFamilyCategoryId)
+        )
+        val familyResult = engine.decide(familyCaller, nightMode)
+        assertEquals(CallAction.ALLOW, familyResult.action)
+        assertEquals(customFamilyCategoryId, familyResult.matchedCategoryId)
+
+        // Caller belongs to custom user category "delivery_drivers"
+        val deliveryCaller = CallerIdentity(
+            rawNumber = "09301234567",
+            normalizedNumber = "+989301234567",
+            customCategoryIds = setOf(customDeliveryCategoryId)
+        )
+        val deliveryResult = engine.decide(deliveryCaller, nightMode)
+        assertEquals(CallAction.SILENCE, deliveryResult.action)
+        assertEquals(customDeliveryCategoryId, deliveryResult.matchedCategoryId)
     }
 
     @Test
@@ -110,8 +147,8 @@ class CallDecisionEngineUnitTest {
             name = "Personal",
             isEnabled = true,
             rules = listOf(
-                CallRule("r1", "personal", CallerCategory.CONTACT, CallAction.ALLOW),
-                CallRule("r2", "personal", CallerCategory.UNKNOWN, CallAction.SILENCE)
+                CallRule("r1", "personal", SystemCategories.CONTACT, CallAction.ALLOW),
+                CallRule("r2", "personal", SystemCategories.UNKNOWN, CallAction.SILENCE)
             )
         )
 

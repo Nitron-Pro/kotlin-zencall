@@ -8,7 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,25 +25,28 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -68,10 +70,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import pro.nitron.zencall.R
-import pro.nitron.zencall.data.prefs.FirewallMode
 import pro.nitron.zencall.data.prefs.FirewallPreferences
-import pro.nitron.zencall.ui.theme.ZenCardDark
-import pro.nitron.zencall.ui.theme.ZenNavy
+import pro.nitron.zencall.data.repository.FirewallRepository
+import pro.nitron.zencall.data.repository.FirewallRepositoryImpl
+import pro.nitron.zencall.domain.model.CallerCategory
 import pro.nitron.zencall.ui.theme.ZenShieldGreen
 import pro.nitron.zencall.ui.theme.ZenShieldRed
 
@@ -80,12 +82,18 @@ import pro.nitron.zencall.ui.theme.ZenShieldRed
 fun HomeScreen() {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val repository: FirewallRepository = remember { FirewallRepositoryImpl(context) }
     val preferences = remember { FirewallPreferences(context) }
 
     val isFirewallEnabled by preferences.isFirewallEnabled.collectAsState(initial = true)
-    val currentMode by preferences.firewallMode.collectAsState(initial = FirewallMode.BLOCK_UNKNOWN)
-    val blockPrivate by preferences.blockPrivateNumbers.collectAsState(initial = true)
-    val silentDrop by preferences.silentDrop.collectAsState(initial = true)
+    val modes by repository.getAllModes().collectAsState(initial = emptyList())
+    val activeMode by repository.getActiveModeFlow().collectAsState(initial = null)
+    val categories by repository.getAllCategories().collectAsState(initial = emptyList())
+
+    // Dialog state for creating custom category
+    var showCreateCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryName by remember { mutableStateOf("") }
+    var newCategoryDesc by remember { mutableStateOf("") }
 
     // RoleManager State for Call Screening
     var isCallScreeningRoleHeld by remember { mutableStateOf(false) }
@@ -144,7 +152,7 @@ fun HomeScreen() {
                                 fontSize = 20.sp
                             )
                             Text(
-                                text = "v0.1.0 • Core Screening Active",
+                                text = "v0.1.0 • Room & DataStore Active",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -217,7 +225,7 @@ fun HomeScreen() {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(160.dp)
+                    .size(150.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.radialGradient(
@@ -228,7 +236,7 @@ fun HomeScreen() {
                 Image(
                     painter = painterResource(id = R.drawable.ic_zencall_logo),
                     contentDescription = "ZenCall 3D Logo",
-                    modifier = Modifier.size(120.dp)
+                    modifier = Modifier.size(115.dp)
                 )
             }
 
@@ -242,12 +250,10 @@ fun HomeScreen() {
             )
 
             Text(
-                text = when {
-                    !isFirewallEnabled -> "تمام تماس‌های ورودی آزاد هستند"
-                    currentMode == FirewallMode.BLOCK_UNKNOWN -> "رد خودکار تمام شماره‌های ناشناس (خارج از مخاطبین)"
-                    currentMode == FirewallMode.BLOCK_BLACKLIST -> "مسدودسازی شماره‌های لیست سیاه"
-                    currentMode == FirewallMode.BLOCK_ALL -> "سکوت کامل — مسدودسازی تمام تماس‌ها"
-                    else -> "پایش هوشمند تماس‌های ورودی"
+                text = if (isFirewallEnabled) {
+                    "حالت فعال: ${activeMode?.name ?: "Personal"}"
+                } else {
+                    "تمام تماس‌های ورودی بدون فیلتر وصل می‌شوند"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -276,7 +282,7 @@ fun HomeScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = if (isFirewallEnabled) "در حال محافظت و رهگیری تماس" else "موتور متوقف شده است",
+                            text = if (isFirewallEnabled) "در حال محافظت با اولویت <5ms" else "موتور متوقف شده است",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -297,11 +303,11 @@ fun HomeScreen() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Firewall Modes Section
+            // Modes Section
             Text(
-                text = "حالت‌های غربالگری و فیلترینگ",
+                text = "حالت‌های کاری تماس (Call Modes)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
@@ -317,56 +323,69 @@ fun HomeScreen() {
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-
-                    ModeRow(
-                        title = "مسدودسازی ناشناس‌ها (توصیه شده)",
-                        subtitle = "فقط مخاطبین شما مجاز به برقراری تماس هستند",
-                        isSelected = currentMode == FirewallMode.BLOCK_UNKNOWN,
-                        onClick = {
-                            coroutineScope.launch {
-                                preferences.setFirewallMode(FirewallMode.BLOCK_UNKNOWN)
+                    val currentActiveId = activeMode?.id ?: "mode_personal"
+                    modes.forEach { mode ->
+                        val isSelected = mode.id == currentActiveId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    coroutineScope.launch {
+                                        repository.setActiveModeId(mode.id)
+                                    }
+                                }
+                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        repository.setActiveModeId(mode.id)
+                                    }
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mode.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = "رفتار پیش‌فرض: ${mode.defaultAction.name} • ${mode.rules.size} قانون",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
-                    )
+                    }
+                }
+            }
 
-                    ModeRow(
-                        title = "فقط لیست سیاه (Blacklist)",
-                        subtitle = "همه زنگ می‌خورند به جز شماره‌های مسدودشده",
-                        isSelected = currentMode == FirewallMode.BLOCK_BLACKLIST,
-                        onClick = {
-                            coroutineScope.launch {
-                                preferences.setFirewallMode(FirewallMode.BLOCK_BLACKLIST)
-                            }
-                        }
-                    )
+            Spacer(modifier = Modifier.height(20.dp))
 
-                    ModeRow(
-                        title = "سکوت مطلق (Block All)",
-                        subtitle = "هیچ تماسی وصل نمی‌شود (حالت مطالعه/جلسه)",
-                        isSelected = currentMode == FirewallMode.BLOCK_ALL,
-                        onClick = {
-                            coroutineScope.launch {
-                                preferences.setFirewallMode(FirewallMode.BLOCK_ALL)
-                            }
-                        }
-                    )
-
-                    ModeRow(
-                        title = "عبور آزاد (Allow All)",
-                        subtitle = "فیلتر اعمال نشود و همه تماس‌ها متصل شوند",
-                        isSelected = currentMode == FirewallMode.ALLOW_ALL,
-                        onClick = {
-                            coroutineScope.launch {
-                                preferences.setFirewallMode(FirewallMode.ALLOW_ALL)
-                            }
-                        }
+            // User Custom & System Categories Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "دسته‌بندی‌های تماس (Caller Categories)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = { showCreateCategoryDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "افزودن دسته‌بندی دلخواه",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Extra Toggles
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -374,32 +393,68 @@ fun HomeScreen() {
                 ),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "مسدودسازی شماره‌های مخفی/Private",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
+                Column(modifier = Modifier.padding(12.dp)) {
+                    categories.forEach { category ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = if (category.isSystemDefault) MaterialTheme.colorScheme.primary else ZenShieldGreen,
+                                modifier = Modifier.size(24.dp)
                             )
-                            Text(
-                                text = "تماس‌هایی که شماره آن‌ها Unknown یا No Caller ID است",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = blockPrivate,
-                            onCheckedChange = { checked ->
-                                coroutineScope.launch {
-                                    preferences.setBlockPrivateNumbers(checked)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = category.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (category.isSystemDefault) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "(پیش‌فرض سیستم)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "(سفارشی کاربر)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = ZenShieldGreen
+                                        )
+                                    }
+                                }
+                                category.description?.let {
+                                    Text(
+                                        text = it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
-                        )
+                            if (!category.isSystemDefault) {
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            repository.deleteCategory(category.id)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "حذف گروه سفارشی",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -407,39 +462,59 @@ fun HomeScreen() {
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
-}
 
-@Composable
-fun ModeRow(
-    title: String,
-    subtitle: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(vertical = 10.dp, horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = isSelected,
-            onClick = onClick
+    // Dialog for creating user's custom CallerCategory
+    if (showCreateCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateCategoryDialog = false },
+            title = { Text(text = "ایجاد گروه/دسته‌بندی جدید تماس", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        text = "می‌توانید گروه‌های دلخواه مثل «همکاران شرکت»، «پیک و رانندگان» یا «خانواده درجه ۱» ایجاد کنید و برای آن‌ها قوانین دلخواه تنظیم نمایید.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = newCategoryName,
+                        onValueChange = { newCategoryName = it },
+                        label = { Text("نام دسته (مثال: همکاران)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = newCategoryDesc,
+                        onValueChange = { newCategoryDesc = it },
+                        label = { Text("توضیحات اختیاری") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newCategoryName.isNotBlank()) {
+                            coroutineScope.launch {
+                                repository.createCustomCategory(
+                                    name = newCategoryName.trim(),
+                                    description = newCategoryDesc.trim().ifBlank { null }
+                                )
+                                newCategoryName = ""
+                                newCategoryDesc = ""
+                                showCreateCategoryDialog = false
+                            }
+                        }
+                    }
+                ) {
+                    Text("ایجاد گروه")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateCategoryDialog = false }) {
+                    Text("انصراف")
+                }
+            }
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }

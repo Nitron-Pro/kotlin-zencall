@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "pro.nitron.zencall.app-mergeDebugResources-49:/values-v21/values-v21.xml",
+            "outputFile": "pro.nitron.zencall.app-mergeDebugResources-53:/values-v21/values-v21.xml",
             "map": [
                 {
-                    "source": "D:\\Android\\.gradle\\caches\\8.10.2\\transforms\\b45708e98a37e95365026463bcb90c48\\transformed\\core-1.13.1\\res\\values-v21\\values-v21.xml",
+                    "source": "D:\\Android\\.gradle\\caches\\8.10.2\\transforms\\ac8669a6093dcf37bb4df51c21c774ea\\transformed\\core-1.13.1\\res\\values-v21\\values-v21.xml",
                     "from": {
                         "startLines": "2,3,4,5,6,7,8,9,10,13",
                         "startColumns": "4,4,4,4,4,4,4,4,4,4",
