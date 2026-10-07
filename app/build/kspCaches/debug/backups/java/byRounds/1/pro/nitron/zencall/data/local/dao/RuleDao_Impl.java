@@ -44,7 +44,7 @@ public final class RuleDao_Impl implements RuleDao {
       @Override
       @NonNull
       protected String createQuery() {
-        return "INSERT OR REPLACE INTO `call_rules` (`id`,`modeId`,`categoryId`,`action`,`priority`) VALUES (?,?,?,?,?)";
+        return "INSERT OR REPLACE INTO `call_rules` (`id`,`modeId`,`categoryId`,`action`,`priority`,`isScheduleEnabled`,`scheduleDaysCsv`,`startMinuteOfDay`,`endMinuteOfDay`,`outsideScheduleAction`) VALUES (?,?,?,?,?,?,?,?,?,?)";
       }
 
       @Override
@@ -55,6 +55,16 @@ public final class RuleDao_Impl implements RuleDao {
         statement.bindString(3, entity.getCategoryId());
         statement.bindString(4, __CallAction_enumToString(entity.getAction()));
         statement.bindLong(5, entity.getPriority());
+        final int _tmp = entity.isScheduleEnabled() ? 1 : 0;
+        statement.bindLong(6, _tmp);
+        statement.bindString(7, entity.getScheduleDaysCsv());
+        statement.bindLong(8, entity.getStartMinuteOfDay());
+        statement.bindLong(9, entity.getEndMinuteOfDay());
+        if (entity.getOutsideScheduleAction() == null) {
+          statement.bindNull(10);
+        } else {
+          statement.bindString(10, __CallAction_enumToString(entity.getOutsideScheduleAction()));
+        }
       }
     };
     this.__preparedStmtOfDeleteRule = new SharedSQLiteStatement(__db) {
@@ -150,6 +160,11 @@ public final class RuleDao_Impl implements RuleDao {
           final int _cursorIndexOfCategoryId = CursorUtil.getColumnIndexOrThrow(_cursor, "categoryId");
           final int _cursorIndexOfAction = CursorUtil.getColumnIndexOrThrow(_cursor, "action");
           final int _cursorIndexOfPriority = CursorUtil.getColumnIndexOrThrow(_cursor, "priority");
+          final int _cursorIndexOfIsScheduleEnabled = CursorUtil.getColumnIndexOrThrow(_cursor, "isScheduleEnabled");
+          final int _cursorIndexOfScheduleDaysCsv = CursorUtil.getColumnIndexOrThrow(_cursor, "scheduleDaysCsv");
+          final int _cursorIndexOfStartMinuteOfDay = CursorUtil.getColumnIndexOrThrow(_cursor, "startMinuteOfDay");
+          final int _cursorIndexOfEndMinuteOfDay = CursorUtil.getColumnIndexOrThrow(_cursor, "endMinuteOfDay");
+          final int _cursorIndexOfOutsideScheduleAction = CursorUtil.getColumnIndexOrThrow(_cursor, "outsideScheduleAction");
           final List<CallRuleEntity> _result = new ArrayList<CallRuleEntity>(_cursor.getCount());
           while (_cursor.moveToNext()) {
             final CallRuleEntity _item;
@@ -163,7 +178,23 @@ public final class RuleDao_Impl implements RuleDao {
             _tmpAction = __CallAction_stringToEnum(_cursor.getString(_cursorIndexOfAction));
             final int _tmpPriority;
             _tmpPriority = _cursor.getInt(_cursorIndexOfPriority);
-            _item = new CallRuleEntity(_tmpId,_tmpModeId,_tmpCategoryId,_tmpAction,_tmpPriority);
+            final boolean _tmpIsScheduleEnabled;
+            final int _tmp;
+            _tmp = _cursor.getInt(_cursorIndexOfIsScheduleEnabled);
+            _tmpIsScheduleEnabled = _tmp != 0;
+            final String _tmpScheduleDaysCsv;
+            _tmpScheduleDaysCsv = _cursor.getString(_cursorIndexOfScheduleDaysCsv);
+            final int _tmpStartMinuteOfDay;
+            _tmpStartMinuteOfDay = _cursor.getInt(_cursorIndexOfStartMinuteOfDay);
+            final int _tmpEndMinuteOfDay;
+            _tmpEndMinuteOfDay = _cursor.getInt(_cursorIndexOfEndMinuteOfDay);
+            final CallAction _tmpOutsideScheduleAction;
+            if (_cursor.isNull(_cursorIndexOfOutsideScheduleAction)) {
+              _tmpOutsideScheduleAction = null;
+            } else {
+              _tmpOutsideScheduleAction = __CallAction_stringToEnum(_cursor.getString(_cursorIndexOfOutsideScheduleAction));
+            }
+            _item = new CallRuleEntity(_tmpId,_tmpModeId,_tmpCategoryId,_tmpAction,_tmpPriority,_tmpIsScheduleEnabled,_tmpScheduleDaysCsv,_tmpStartMinuteOfDay,_tmpEndMinuteOfDay,_tmpOutsideScheduleAction);
             _result.add(_item);
           }
           return _result;
@@ -198,6 +229,11 @@ public final class RuleDao_Impl implements RuleDao {
           final int _cursorIndexOfCategoryId = CursorUtil.getColumnIndexOrThrow(_cursor, "categoryId");
           final int _cursorIndexOfAction = CursorUtil.getColumnIndexOrThrow(_cursor, "action");
           final int _cursorIndexOfPriority = CursorUtil.getColumnIndexOrThrow(_cursor, "priority");
+          final int _cursorIndexOfIsScheduleEnabled = CursorUtil.getColumnIndexOrThrow(_cursor, "isScheduleEnabled");
+          final int _cursorIndexOfScheduleDaysCsv = CursorUtil.getColumnIndexOrThrow(_cursor, "scheduleDaysCsv");
+          final int _cursorIndexOfStartMinuteOfDay = CursorUtil.getColumnIndexOrThrow(_cursor, "startMinuteOfDay");
+          final int _cursorIndexOfEndMinuteOfDay = CursorUtil.getColumnIndexOrThrow(_cursor, "endMinuteOfDay");
+          final int _cursorIndexOfOutsideScheduleAction = CursorUtil.getColumnIndexOrThrow(_cursor, "outsideScheduleAction");
           final List<CallRuleEntity> _result = new ArrayList<CallRuleEntity>(_cursor.getCount());
           while (_cursor.moveToNext()) {
             final CallRuleEntity _item;
@@ -211,7 +247,23 @@ public final class RuleDao_Impl implements RuleDao {
             _tmpAction = __CallAction_stringToEnum(_cursor.getString(_cursorIndexOfAction));
             final int _tmpPriority;
             _tmpPriority = _cursor.getInt(_cursorIndexOfPriority);
-            _item = new CallRuleEntity(_tmpId,_tmpModeId,_tmpCategoryId,_tmpAction,_tmpPriority);
+            final boolean _tmpIsScheduleEnabled;
+            final int _tmp;
+            _tmp = _cursor.getInt(_cursorIndexOfIsScheduleEnabled);
+            _tmpIsScheduleEnabled = _tmp != 0;
+            final String _tmpScheduleDaysCsv;
+            _tmpScheduleDaysCsv = _cursor.getString(_cursorIndexOfScheduleDaysCsv);
+            final int _tmpStartMinuteOfDay;
+            _tmpStartMinuteOfDay = _cursor.getInt(_cursorIndexOfStartMinuteOfDay);
+            final int _tmpEndMinuteOfDay;
+            _tmpEndMinuteOfDay = _cursor.getInt(_cursorIndexOfEndMinuteOfDay);
+            final CallAction _tmpOutsideScheduleAction;
+            if (_cursor.isNull(_cursorIndexOfOutsideScheduleAction)) {
+              _tmpOutsideScheduleAction = null;
+            } else {
+              _tmpOutsideScheduleAction = __CallAction_stringToEnum(_cursor.getString(_cursorIndexOfOutsideScheduleAction));
+            }
+            _item = new CallRuleEntity(_tmpId,_tmpModeId,_tmpCategoryId,_tmpAction,_tmpPriority,_tmpIsScheduleEnabled,_tmpScheduleDaysCsv,_tmpStartMinuteOfDay,_tmpEndMinuteOfDay,_tmpOutsideScheduleAction);
             _result.add(_item);
           }
           return _result;

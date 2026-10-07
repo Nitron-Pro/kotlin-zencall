@@ -25,17 +25,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +80,9 @@ import pro.nitron.zencall.R
 import pro.nitron.zencall.data.prefs.FirewallPreferences
 import pro.nitron.zencall.data.repository.FirewallRepository
 import pro.nitron.zencall.data.repository.FirewallRepositoryImpl
+import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallerCategory
+import pro.nitron.zencall.domain.model.WeeklySchedule
 import pro.nitron.zencall.ui.theme.ZenShieldGreen
 import pro.nitron.zencall.ui.theme.ZenShieldRed
 
@@ -94,6 +103,20 @@ fun HomeScreen() {
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
     var newCategoryDesc by remember { mutableStateOf("") }
+
+    // Dialog state for configuring weekly schedule for a category in active mode
+    var scheduleTargetCategory by remember { mutableStateOf<CallerCategory?>(null) }
+    var isScheduleEnabled by remember { mutableStateOf(false) }
+    var selectedDays by remember { mutableStateOf(setOf(1, 2, 3, 4, 5, 6)) } // Shanbeh to Panjshanbeh (or standard Mon-Sat)
+    var startHourStr by remember { mutableStateOf("08:00") }
+    var endHourStr by remember { mutableStateOf("17:00") }
+    var selectedAction by remember { mutableStateOf(CallAction.ALLOW) }
+    var outsideAction by remember { mutableStateOf(CallAction.REJECT) }
+
+    // Dialog state for adding a phone number to a category
+    var numberTargetCategory by remember { mutableStateOf<CallerCategory?>(null) }
+    var newNumberInput by remember { mutableStateOf("") }
+    var newNumberName by remember { mutableStateOf("") }
 
     // RoleManager State for Call Screening
     var isCallScreeningRoleHeld by remember { mutableStateOf(false) }
@@ -152,7 +175,7 @@ fun HomeScreen() {
                                 fontSize = 20.sp
                             )
                             Text(
-                                text = "v0.1.0 • Room & DataStore Active",
+                                text = "v0.1.0 • Weekly Schedules & Custom Groups",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -282,7 +305,7 @@ fun HomeScreen() {
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = if (isFirewallEnabled) "در حال محافظت با اولویت <5ms" else "موتور متوقف شده است",
+                            text = if (isFirewallEnabled) "در حال پایش هوشمند بر اساس زمانبندی" else "موتور متوقف شده است",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -366,17 +389,24 @@ fun HomeScreen() {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // User Custom & System Categories Section
+            // User Custom & System Categories Section (with Scheduling Action)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "دسته‌بندی‌های تماس (Caller Categories)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Column {
+                    Text(
+                        text = "دسته‌بندی‌ها و زمانبندی هفتگی",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "تعیین ساعت و روزهای مجاز/بلاک بودن هر گروه",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(onClick = { showCreateCategoryDialog = true }) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -386,6 +416,8 @@ fun HomeScreen() {
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -394,11 +426,16 @@ fun HomeScreen() {
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
+                    val activeRules = activeMode?.rules ?: emptyList()
+
                     categories.forEach { category ->
+                        val matchingRule = activeRules.firstOrNull { it.categoryId == category.id }
+                        val hasSchedule = matchingRule?.schedule?.isEnabled == true
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp, horizontal = 8.dp),
+                                .padding(vertical = 10.dp, horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -415,30 +452,77 @@ fun HomeScreen() {
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    if (category.isSystemDefault) {
+                                    if (hasSchedule) {
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "(پیش‌فرض سیستم)",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    } else {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "(سفارشی کاربر)",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = ZenShieldGreen
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = "زمانبندی فعال",
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(16.dp)
                                         )
                                     }
                                 }
-                                category.description?.let {
+
+                                if (hasSchedule) {
+                                    val startH = String.format("%02d:%02d", matchingRule!!.schedule.startMinuteOfDay / 60, matchingRule.schedule.startMinuteOfDay % 60)
+                                    val endH = String.format("%02d:%02d", matchingRule.schedule.endMinuteOfDay / 60, matchingRule.schedule.endMinuteOfDay % 60)
                                     Text(
-                                        text = it,
+                                        text = "⏰ ساعات مجاز: $startH تا $endH (خارج ساعت: ${matchingRule.schedule.outsideScheduleAction ?: CallAction.REJECT})",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = Color(0xFFF59E0B),
+                                        fontWeight = FontWeight.Medium
                                     )
+                                } else {
+                                    category.description?.let {
+                                        Text(
+                                            text = it,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
+
+                            // Add Number Button
+                            IconButton(onClick = { numberTargetCategory = category }) {
+                                Icon(
+                                    imageVector = Icons.Default.Phone,
+                                    contentDescription = "افزودن شماره",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Configure Schedule Button
+                            IconButton(onClick = {
+                                scheduleTargetCategory = category
+                                if (matchingRule != null && matchingRule.schedule.isEnabled) {
+                                    isScheduleEnabled = true
+                                    selectedDays = matchingRule.schedule.daysOfWeek
+                                    val sMin = matchingRule.schedule.startMinuteOfDay
+                                    val eMin = matchingRule.schedule.endMinuteOfDay
+                                    startHourStr = String.format("%02d:%02d", sMin / 60, sMin % 60)
+                                    endHourStr = String.format("%02d:%02d", eMin / 60, eMin % 60)
+                                    selectedAction = matchingRule.action
+                                    outsideAction = matchingRule.schedule.outsideScheduleAction ?: CallAction.REJECT
+                                } else {
+                                    isScheduleEnabled = false
+                                    selectedDays = setOf(1, 2, 3, 4, 5, 6)
+                                    startHourStr = "08:00"
+                                    endHourStr = "17:00"
+                                    selectedAction = CallAction.ALLOW
+                                    outsideAction = CallAction.REJECT
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "تنظیم زمانبندی",
+                                    tint = if (hasSchedule) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Delete button (only for non-system)
                             if (!category.isSystemDefault) {
                                 IconButton(
                                     onClick = {
@@ -449,8 +533,9 @@ fun HomeScreen() {
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = "حذف گروه سفارشی",
-                                        tint = MaterialTheme.colorScheme.error
+                                        contentDescription = "حذف گروه",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
@@ -463,7 +548,237 @@ fun HomeScreen() {
         }
     }
 
-    // Dialog for creating user's custom CallerCategory
+    // Dialog 1: Add Number to Category
+    if (numberTargetCategory != null) {
+        val cat = numberTargetCategory!!
+        AlertDialog(
+            onDismissRequest = { numberTargetCategory = null },
+            title = { Text("افزودن شماره به «${cat.name}»", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        text = "شماره را وارد کنید (مثال: 09121112233 یا با کد کشور)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = newNumberInput,
+                        onValueChange = { newNumberInput = it },
+                        label = { Text("شماره تلفن") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newNumberName,
+                        onValueChange = { newNumberName = it },
+                        label = { Text("نام مخاطب (اختیاری)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newNumberInput.isNotBlank()) {
+                            coroutineScope.launch {
+                                repository.addNumberToCategory(
+                                    categoryId = cat.id,
+                                    rawNumber = newNumberInput.trim(),
+                                    displayName = newNumberName.trim().ifBlank { null }
+                                )
+                                newNumberInput = ""
+                                newNumberName = ""
+                                numberTargetCategory = null
+                            }
+                        }
+                    }
+                ) {
+                    Text("ثبت شماره")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { numberTargetCategory = null }) {
+                    Text("انصراف")
+                }
+            }
+        )
+    }
+
+    // Dialog 2: Weekly Schedule Configuration
+    if (scheduleTargetCategory != null) {
+        val cat = scheduleTargetCategory!!
+        AlertDialog(
+            onDismissRequest = { scheduleTargetCategory = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFFF59E0B))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("زمانبندی گروه «${cat.name}»", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("فعال‌سازی زمانبندی ساعتی/هفتگی", fontWeight = FontWeight.SemiBold)
+                        Switch(
+                            checked = isScheduleEnabled,
+                            onCheckedChange = { isScheduleEnabled = it }
+                        )
+                    }
+
+                    if (isScheduleEnabled) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "روزهای فعال:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Day chips: 6 (Shanbeh) .. 5 (Jomeh) or 1..7
+                        val dayNames = listOf(
+                            6 to "شنبه",
+                            7 to "یکشنبه",
+                            1 to "دوشنبه",
+                            2 to "سه‌شنبه",
+                            3 to "چهارشنبه",
+                            4 to "پنجشنبه",
+                            5 to "جمعه"
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            dayNames.take(4).forEach { (dayVal, label) ->
+                                val isDaySelected = dayVal in selectedDays
+                                FilterChip(
+                                    selected = isDaySelected,
+                                    onClick = {
+                                        selectedDays = if (isDaySelected) selectedDays - dayVal else selectedDays + dayVal
+                                    },
+                                    label = { Text(label, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            dayNames.drop(4).forEach { (dayVal, label) ->
+                                val isDaySelected = dayVal in selectedDays
+                                FilterChip(
+                                    selected = isDaySelected,
+                                    onClick = {
+                                        selectedDays = if (isDaySelected) selectedDays - dayVal else selectedDays + dayVal
+                                    },
+                                    label = { Text(label, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = startHourStr,
+                                onValueChange = { startHourStr = it },
+                                label = { Text("از ساعت (08:00)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = endHourStr,
+                                onValueChange = { endHourStr = it },
+                                label = { Text("تا ساعت (17:00)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "در این بازه زمانی شماره‌ها:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "✅ مجاز (ALLOW) — زنگ می‌خورد",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ZenShieldGreen,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "خارج از این ساعات یا روزهای دیگر:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "⛔ مسدود (REJECT) — بلاک خودکار",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ZenShieldRed,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val activeModeId = activeMode?.id ?: "mode_personal"
+
+                        fun parseMin(str: String, default: Int): Int {
+                            val parts = str.split(":")
+                            if (parts.size == 2) {
+                                val h = parts[0].trim().toIntOrNull() ?: 0
+                                val m = parts[1].trim().toIntOrNull() ?: 0
+                                return (h * 60 + m).coerceIn(0, 1439)
+                            }
+                            return default
+                        }
+
+                        val sMin = parseMin(startHourStr, 8 * 60)
+                        val eMin = parseMin(endHourStr, 17 * 60)
+
+                        val schedule = WeeklySchedule(
+                            isEnabled = isScheduleEnabled,
+                            daysOfWeek = selectedDays,
+                            startMinuteOfDay = sMin,
+                            endMinuteOfDay = eMin,
+                            outsideScheduleAction = if (isScheduleEnabled) outsideAction else null
+                        )
+
+                        coroutineScope.launch {
+                            repository.setRule(
+                                modeId = activeModeId,
+                                categoryId = cat.id,
+                                action = selectedAction,
+                                priority = 20, // High priority for scheduled group
+                                schedule = schedule
+                            )
+                            scheduleTargetCategory = null
+                        }
+                    }
+                ) {
+                    Text("ذخیره زمانبندی")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { scheduleTargetCategory = null }) {
+                    Text("انصراف")
+                }
+            }
+        )
+    }
+
+    // Dialog 3: Create Category Dialog
     if (showCreateCategoryDialog) {
         AlertDialog(
             onDismissRequest = { showCreateCategoryDialog = false },
@@ -471,7 +786,7 @@ fun HomeScreen() {
             text = {
                 Column {
                     Text(
-                        text = "می‌توانید گروه‌های دلخواه مثل «همکاران شرکت»، «پیک و رانندگان» یا «خانواده درجه ۱» ایجاد کنید و برای آن‌ها قوانین دلخواه تنظیم نمایید.",
+                        text = "می‌توانید گروه‌های دلخواه مثل «همکاران شرکت»، «پیک و رانندگان» یا «خانواده» ایجاد کنید و برای آن‌ها زمانبندی ساعتی و روزانه بگذارید.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -479,7 +794,7 @@ fun HomeScreen() {
                     OutlinedTextField(
                         value = newCategoryName,
                         onValueChange = { newCategoryName = it },
-                        label = { Text("نام دسته (مثال: همکاران)") },
+                        label = { Text("نام دسته (مثال: همکاران شرکت)") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(12.dp))

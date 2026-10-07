@@ -53,7 +53,13 @@ data class CallRuleEntity(
     val modeId: String,
     val categoryId: String,
     val action: CallAction,
-    val priority: Int = 0
+    val priority: Int = 0,
+    // Weekly scheduling columns
+    val isScheduleEnabled: Boolean = false,
+    val scheduleDaysCsv: String = "1,2,3,4,5,6,7", // comma separated day values 1..7
+    val startMinuteOfDay: Int = 0, // 0..1439
+    val endMinuteOfDay: Int = 1439, // 0..1439
+    val outsideScheduleAction: CallAction? = null
 )
 
 @Entity(

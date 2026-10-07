@@ -175,4 +175,66 @@ class CallDecisionEngineUnitTest {
         val masked = normalizer.maskForLog("09123456789")
         assertEquals("+9891****789", masked)
     }
+
+    @Test
+    fun `weekly schedule allows work category during office hours and blocks outside`() {
+        val workCategory = "work_colleagues"
+
+        // Rule: On Monday to Friday (1..5), from 08:30 (510 min) to 17:00 (1020 min), ALLOW.
+        // Outside of this schedule, REJECT.
+        val workSchedule = pro.nitron.zencall.domain.model.WeeklySchedule(
+            isEnabled = true,
+            daysOfWeek = setOf(1, 2, 3, 4, 5),
+            startMinuteOfDay = 8 * 60 + 30, // 510
+            endMinuteOfDay = 17 * 60,       // 1020
+            outsideScheduleAction = CallAction.REJECT
+        )
+
+        val mode = CallMode(
+            id = "smart_mode",
+            name = "Smart Work Schedule",
+            isEnabled = true,
+            rules = listOf(
+                CallRule(
+                    id = "r_work",
+                    modeId = "smart_mode",
+                    categoryId = workCategory,
+                    action = CallAction.ALLOW,
+                    priority = 10,
+                    schedule = workSchedule
+                ),
+                CallRule(
+                    id = "r_default",
+                    modeId = "smart_mode",
+                    categoryId = SystemCategories.UNKNOWN,
+                    action = CallAction.SILENCE,
+                    priority = 0
+                )
+            )
+        )
+
+        val colleagueCaller = CallerIdentity(
+            rawNumber = "09123334455",
+            normalizedNumber = "+989123334455",
+            customCategoryIds = setOf(workCategory)
+        )
+
+        // Monday at 10:00 AM (Inside office hours -> ALLOW)
+        val mondayOfficeTime = java.time.LocalDateTime.of(2026, 10, 5, 10, 0) // Oct 5, 2026 is Monday (day 1)
+        val officeResult = engine.decide(colleagueCaller, mode, mondayOfficeTime)
+        assertEquals(CallAction.ALLOW, officeResult.action)
+        assertEquals(workCategory, officeResult.matchedCategoryId)
+
+        // Monday at 20:30 (Outside office hours -> REJECT)
+        val mondayNightTime = java.time.LocalDateTime.of(2026, 10, 5, 20, 30)
+        val nightResult = engine.decide(colleagueCaller, mode, mondayNightTime)
+        assertEquals(CallAction.REJECT, nightResult.action)
+        assertEquals(workCategory, nightResult.matchedCategoryId)
+
+        // Sunday at 11:00 AM (Weekend / Non-working day -> REJECT)
+        val sundayTime = java.time.LocalDateTime.of(2026, 10, 11, 11, 0) // Oct 11, 2026 is Sunday (day 7)
+        val sundayResult = engine.decide(colleagueCaller, mode, sundayTime)
+        assertEquals(CallAction.REJECT, sundayResult.action)
+        assertEquals(workCategory, sundayResult.matchedCategoryId)
+    }
 }

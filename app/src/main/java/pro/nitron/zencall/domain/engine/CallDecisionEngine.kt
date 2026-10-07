@@ -2,8 +2,10 @@ package pro.nitron.zencall.domain.engine
 
 import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallMode
+import pro.nitron.zencall.domain.model.CallRule
 import pro.nitron.zencall.domain.model.CallerIdentity
 import pro.nitron.zencall.domain.model.SystemCategories
+import java.time.LocalDateTime
 
 data class DecisionResult(
     val action: CallAction,
@@ -27,7 +29,8 @@ class CallDecisionEngine(
 
     fun decide(
         caller: CallerIdentity,
-        activeMode: CallMode?
+        activeMode: CallMode?,
+        callTime: LocalDateTime = LocalDateTime.now()
     ): DecisionResult {
         val start = System.currentTimeMillis()
 
@@ -40,12 +43,15 @@ class CallDecisionEngine(
             )
         }
 
+        val dayOfWeekValue = callTime.dayOfWeek.value // 1 (Mon) .. 7 (Sun)
+        val minuteOfDay = callTime.hour * 60 + callTime.minute
+
         // 2. Explicit Allowed List (Whitelist) has top priority
         if (caller.isAllowedList) {
             val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.ALLOWED_NUMBER }
-            val action = rule?.action ?: CallAction.ALLOW
+            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay) ?: CallAction.ALLOW
             return DecisionResult(
-                action = action,
+                action = resolvedAction,
                 reason = "Caller is in Allowed list",
                 matchedCategoryId = SystemCategories.ALLOWED_NUMBER,
                 evaluationTimeMs = System.currentTimeMillis() - start
@@ -55,9 +61,9 @@ class CallDecisionEngine(
         // 3. Explicit Blocked List (Blacklist) has second priority
         if (caller.isBlockedList) {
             val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.BLOCKED_NUMBER }
-            val action = rule?.action ?: CallAction.REJECT
+            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay) ?: CallAction.REJECT
             return DecisionResult(
-                action = action,
+                action = resolvedAction,
                 reason = "Caller is in Blocked list",
                 matchedCategoryId = SystemCategories.BLOCKED_NUMBER,
                 evaluationTimeMs = System.currentTimeMillis() - start
@@ -66,26 +72,30 @@ class CallDecisionEngine(
 
         // 4. Custom User-Created Categories Check (sorted by rule priority descending)
         if (caller.customCategoryIds.isNotEmpty()) {
-            val matchingCustomRule = activeMode.rules
+            val matchingRules = activeMode.rules
                 .filter { it.categoryId in caller.customCategoryIds }
-                .maxByOrNull { it.priority }
+                .sortedByDescending { it.priority }
 
-            if (matchingCustomRule != null) {
-                return DecisionResult(
-                    action = matchingCustomRule.action,
-                    reason = "Caller matched custom user category: ${matchingCustomRule.categoryId}",
-                    matchedCategoryId = matchingCustomRule.categoryId,
-                    evaluationTimeMs = System.currentTimeMillis() - start
-                )
+            for (rule in matchingRules) {
+                val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay)
+                if (resolvedAction != null) {
+                    return DecisionResult(
+                        action = resolvedAction,
+                        reason = "Caller matched custom user category: ${rule.categoryId} (Action: $resolvedAction)",
+                        matchedCategoryId = rule.categoryId,
+                        evaluationTimeMs = System.currentTimeMillis() - start
+                    )
+                }
             }
         }
 
         // 5. Favorite Contact Check
         if (caller.isFavorite) {
             val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.FAVORITE }
-            if (rule != null) {
+            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay)
+            if (resolvedAction != null) {
                 return DecisionResult(
-                    action = rule.action,
+                    action = resolvedAction,
                     reason = "Caller is a favorite contact",
                     matchedCategoryId = SystemCategories.FAVORITE,
                     evaluationTimeMs = System.currentTimeMillis() - start
@@ -96,9 +106,10 @@ class CallDecisionEngine(
         // 6. General Contact Check
         if (caller.isContact) {
             val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.CONTACT }
-            if (rule != null) {
+            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay)
+            if (resolvedAction != null) {
                 return DecisionResult(
-                    action = rule.action,
+                    action = resolvedAction,
                     reason = "Caller is in contacts",
                     matchedCategoryId = SystemCategories.CONTACT,
                     evaluationTimeMs = System.currentTimeMillis() - start
@@ -108,9 +119,10 @@ class CallDecisionEngine(
 
         // 7. Unknown / Non-contact / Private Number Check
         val unknownRule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.UNKNOWN }
-        if (unknownRule != null) {
+        val resolvedUnknownAction = resolveRuleAction(unknownRule, dayOfWeekValue, minuteOfDay)
+        if (resolvedUnknownAction != null) {
             return DecisionResult(
-                action = unknownRule.action,
+                action = resolvedUnknownAction,
                 reason = if (caller.isPrivateOrUnknown) "Caller ID is hidden/private" else "Caller is unknown",
                 matchedCategoryId = SystemCategories.UNKNOWN,
                 evaluationTimeMs = System.currentTimeMillis() - start
@@ -123,5 +135,21 @@ class CallDecisionEngine(
             reason = "Default action of mode '${activeMode.name}'",
             evaluationTimeMs = System.currentTimeMillis() - start
         )
+    }
+
+    /**
+     * Resolves the effective action of a rule given the current day and minute of day.
+     * Returns null if the rule is outside its active schedule and has no outsideScheduleAction defined.
+     */
+    private fun resolveRuleAction(rule: CallRule?, dayOfWeekValue: Int, minuteOfDay: Int): CallAction? {
+        if (rule == null) return null
+        if (!rule.schedule.isEnabled) return rule.action
+
+        val isInside = rule.schedule.isMatching(dayOfWeekValue, minuteOfDay)
+        return if (isInside) {
+            rule.action
+        } else {
+            rule.schedule.outsideScheduleAction
+        }
     }
 }

@@ -46,12 +46,12 @@ public final class ZenCallDatabase_Impl extends ZenCallDatabase {
   @Override
   @NonNull
   protected SupportSQLiteOpenHelper createOpenHelper(@NonNull final DatabaseConfiguration config) {
-    final SupportSQLiteOpenHelper.Callback _openCallback = new RoomOpenHelper(config, new RoomOpenHelper.Delegate(1) {
+    final SupportSQLiteOpenHelper.Callback _openCallback = new RoomOpenHelper(config, new RoomOpenHelper.Delegate(2) {
       @Override
       public void createAllTables(@NonNull final SupportSQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS `call_modes` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `isEnabled` INTEGER NOT NULL, `defaultAction` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))");
         db.execSQL("CREATE TABLE IF NOT EXISTS `caller_categories` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `isSystemDefault` INTEGER NOT NULL, `description` TEXT, `colorHex` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))");
-        db.execSQL("CREATE TABLE IF NOT EXISTS `call_rules` (`id` TEXT NOT NULL, `modeId` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `action` TEXT NOT NULL, `priority` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`modeId`) REFERENCES `call_modes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`categoryId`) REFERENCES `caller_categories`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )");
+        db.execSQL("CREATE TABLE IF NOT EXISTS `call_rules` (`id` TEXT NOT NULL, `modeId` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `action` TEXT NOT NULL, `priority` INTEGER NOT NULL, `isScheduleEnabled` INTEGER NOT NULL, `scheduleDaysCsv` TEXT NOT NULL, `startMinuteOfDay` INTEGER NOT NULL, `endMinuteOfDay` INTEGER NOT NULL, `outsideScheduleAction` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`modeId`) REFERENCES `call_modes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`categoryId`) REFERENCES `caller_categories`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )");
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_rules_modeId` ON `call_rules` (`modeId`)");
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_rules_categoryId` ON `call_rules` (`categoryId`)");
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_call_rules_modeId_categoryId` ON `call_rules` (`modeId`, `categoryId`)");
@@ -60,7 +60,7 @@ public final class ZenCallDatabase_Impl extends ZenCallDatabase {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_category_numbers_normalizedNumber` ON `category_numbers` (`normalizedNumber`)");
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_category_numbers_categoryId_normalizedNumber` ON `category_numbers` (`categoryId`, `normalizedNumber`)");
         db.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)");
-        db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '49e76b1fba8bd8c6a6a250eff9fdc750')");
+        db.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '70c2d0f385efb90d0ef6037bd0d3cf11')");
       }
 
       @Override
@@ -145,12 +145,17 @@ public final class ZenCallDatabase_Impl extends ZenCallDatabase {
                   + " Expected:\n" + _infoCallerCategories + "\n"
                   + " Found:\n" + _existingCallerCategories);
         }
-        final HashMap<String, TableInfo.Column> _columnsCallRules = new HashMap<String, TableInfo.Column>(5);
+        final HashMap<String, TableInfo.Column> _columnsCallRules = new HashMap<String, TableInfo.Column>(10);
         _columnsCallRules.put("id", new TableInfo.Column("id", "TEXT", true, 1, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsCallRules.put("modeId", new TableInfo.Column("modeId", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsCallRules.put("categoryId", new TableInfo.Column("categoryId", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsCallRules.put("action", new TableInfo.Column("action", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
         _columnsCallRules.put("priority", new TableInfo.Column("priority", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsCallRules.put("isScheduleEnabled", new TableInfo.Column("isScheduleEnabled", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsCallRules.put("scheduleDaysCsv", new TableInfo.Column("scheduleDaysCsv", "TEXT", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsCallRules.put("startMinuteOfDay", new TableInfo.Column("startMinuteOfDay", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsCallRules.put("endMinuteOfDay", new TableInfo.Column("endMinuteOfDay", "INTEGER", true, 0, null, TableInfo.CREATED_FROM_ENTITY));
+        _columnsCallRules.put("outsideScheduleAction", new TableInfo.Column("outsideScheduleAction", "TEXT", false, 0, null, TableInfo.CREATED_FROM_ENTITY));
         final HashSet<TableInfo.ForeignKey> _foreignKeysCallRules = new HashSet<TableInfo.ForeignKey>(2);
         _foreignKeysCallRules.add(new TableInfo.ForeignKey("call_modes", "CASCADE", "NO ACTION", Arrays.asList("modeId"), Arrays.asList("id")));
         _foreignKeysCallRules.add(new TableInfo.ForeignKey("caller_categories", "CASCADE", "NO ACTION", Arrays.asList("categoryId"), Arrays.asList("id")));
@@ -187,7 +192,7 @@ public final class ZenCallDatabase_Impl extends ZenCallDatabase {
         }
         return new RoomOpenHelper.ValidationResult(true, null);
       }
-    }, "49e76b1fba8bd8c6a6a250eff9fdc750", "e44c68841184aaa922bf481084ea5762");
+    }, "70c2d0f385efb90d0ef6037bd0d3cf11", "e37baa94a69946efdacf0efc862ddf81");
     final SupportSQLiteOpenHelper.Configuration _sqliteConfig = SupportSQLiteOpenHelper.Configuration.builder(config.context).name(config.name).callback(_openCallback).build();
     final SupportSQLiteOpenHelper _helper = config.sqliteOpenHelperFactory.create(_sqliteConfig);
     return _helper;

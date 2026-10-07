@@ -20,6 +20,7 @@ import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallMode
 import pro.nitron.zencall.domain.model.CallRule
 import pro.nitron.zencall.domain.model.CallerCategory
+import pro.nitron.zencall.domain.model.WeeklySchedule
 import pro.nitron.zencall.domain.util.CallNumberNormalizer
 import java.util.UUID
 
@@ -38,9 +39,15 @@ interface FirewallRepository {
     suspend fun createCustomCategory(name: String, description: String? = null, colorHex: String? = null): CallerCategory
     suspend fun deleteCategory(categoryId: String)
 
-    // Rule operations
+    // Rule operations (with Weekly Scheduling support)
     fun getRulesForMode(modeId: String): Flow<List<CallRule>>
-    suspend fun setRule(modeId: String, categoryId: String, action: CallAction, priority: Int)
+    suspend fun setRule(
+        modeId: String,
+        categoryId: String,
+        action: CallAction,
+        priority: Int = 0,
+        schedule: WeeklySchedule = WeeklySchedule(isEnabled = false)
+    )
     suspend fun removeRule(modeId: String, categoryId: String)
 
     // Number mapping operations
@@ -82,6 +89,30 @@ class FirewallRepositoryImpl(
         }
     }
 
+    private fun mapRuleEntityToDomain(entity: CallRuleEntity): CallRule {
+        val days = entity.scheduleDaysCsv.split(",")
+            .mapNotNull { it.trim().toIntOrNull() }
+            .toSet()
+            .ifEmpty { setOf(1, 2, 3, 4, 5, 6, 7) }
+
+        val schedule = WeeklySchedule(
+            isEnabled = entity.isScheduleEnabled,
+            daysOfWeek = days,
+            startMinuteOfDay = entity.startMinuteOfDay,
+            endMinuteOfDay = entity.endMinuteOfDay,
+            outsideScheduleAction = entity.outsideScheduleAction
+        )
+
+        return CallRule(
+            id = entity.id,
+            modeId = entity.modeId,
+            categoryId = entity.categoryId,
+            action = entity.action,
+            priority = entity.priority,
+            schedule = schedule
+        )
+    }
+
     private suspend fun refreshHotCache() {
         val enabled = preferences.isFirewallEnabled.first()
         val activeModeId = preferences.getActiveModeId() ?: "mode_personal"
@@ -89,9 +120,7 @@ class FirewallRepositoryImpl(
             ?: database.modeDao().getAllModesFlow().first().firstOrNull()
 
         val activeMode = if (modeEntity != null) {
-            val rules = database.ruleDao().getRulesForModeSync(modeEntity.id).map {
-                CallRule(it.id, it.modeId, it.categoryId, it.action, it.priority)
-            }
+            val rules = database.ruleDao().getRulesForModeSync(modeEntity.id).map { mapRuleEntityToDomain(it) }
             CallMode(
                 id = modeEntity.id,
                 name = modeEntity.name,
@@ -118,9 +147,7 @@ class FirewallRepositoryImpl(
     override fun getAllModes(): Flow<List<CallMode>> {
         return database.modeDao().getAllModesFlow().map { modeList ->
             modeList.map { entity ->
-                val rules = database.ruleDao().getRulesForModeSync(entity.id).map {
-                    CallRule(it.id, it.modeId, it.categoryId, it.action, it.priority)
-                }
+                val rules = database.ruleDao().getRulesForModeSync(entity.id).map { mapRuleEntityToDomain(it) }
                 CallMode(
                     id = entity.id,
                     name = entity.name,
@@ -135,9 +162,7 @@ class FirewallRepositoryImpl(
     override suspend fun getActiveMode(): CallMode? {
         val activeId = preferences.getActiveModeId() ?: "mode_personal"
         val entity = database.modeDao().getModeById(activeId) ?: return null
-        val rules = database.ruleDao().getRulesForModeSync(entity.id).map {
-            CallRule(it.id, it.modeId, it.categoryId, it.action, it.priority)
-        }
+        val rules = database.ruleDao().getRulesForModeSync(entity.id).map { mapRuleEntityToDomain(it) }
         return CallMode(
             id = entity.id,
             name = entity.name,
@@ -151,9 +176,7 @@ class FirewallRepositoryImpl(
         return preferences.activeModeIdFlow.map { activeId ->
             val targetId = activeId ?: "mode_personal"
             val entity = database.modeDao().getModeById(targetId) ?: return@map null
-            val rules = database.ruleDao().getRulesForModeSync(entity.id).map {
-                CallRule(it.id, it.modeId, it.categoryId, it.action, it.priority)
-            }
+            val rules = database.ruleDao().getRulesForModeSync(entity.id).map { mapRuleEntityToDomain(it) }
             CallMode(
                 id = entity.id,
                 name = entity.name,
@@ -247,18 +270,29 @@ class FirewallRepositoryImpl(
 
     override fun getRulesForMode(modeId: String): Flow<List<CallRule>> {
         return database.ruleDao().getRulesForModeFlow(modeId).map { list ->
-            list.map { CallRule(it.id, it.modeId, it.categoryId, it.action, it.priority) }
+            list.map { mapRuleEntityToDomain(it) }
         }
     }
 
-    override suspend fun setRule(modeId: String, categoryId: String, action: CallAction, priority: Int) {
+    override suspend fun setRule(
+        modeId: String,
+        categoryId: String,
+        action: CallAction,
+        priority: Int,
+        schedule: WeeklySchedule
+    ) {
         val id = "rule_${modeId}_$categoryId"
         val entity = CallRuleEntity(
             id = id,
             modeId = modeId,
             categoryId = categoryId,
             action = action,
-            priority = priority
+            priority = priority,
+            isScheduleEnabled = schedule.isEnabled,
+            scheduleDaysCsv = schedule.daysOfWeek.joinToString(","),
+            startMinuteOfDay = schedule.startMinuteOfDay,
+            endMinuteOfDay = schedule.endMinuteOfDay,
+            outsideScheduleAction = schedule.outsideScheduleAction
         )
         database.ruleDao().insertOrUpdateRule(entity)
         refreshHotCache()

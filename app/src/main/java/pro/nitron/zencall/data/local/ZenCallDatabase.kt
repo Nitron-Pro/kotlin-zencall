@@ -27,7 +27,7 @@ import pro.nitron.zencall.domain.model.SystemCategories
         CallRuleEntity::class,
         CategoryNumberEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class ZenCallDatabase : RoomDatabase() {

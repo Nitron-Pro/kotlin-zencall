@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-07T21:04:29" hostname="DESKTOP-CUS4K8L" time="0.018">
+<testsuite name="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-10-07T21:30:00" hostname="DESKTOP-CUS4K8L" time="0.028">
   <properties/>
-  <testcase name="allowed list has top priority over blocked rules" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.011"/>
+  <testcase name="allowed list has top priority over blocked rules" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.018"/>
   <testcase name="blocked list rejects caller" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.0"/>
-  <testcase name="custom user-created categories evaluate correctly based on rule priority" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.001"/>
-  <testcase name="personal mode allows contact but silences or rejects unknown" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.0"/>
-  <testcase name="normalizer matches different representations of same number" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.005"/>
-  <testcase name="disabled mode allows all calls" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.0"/>
-  <testcase name="normalizer correctly handles international, leading zero and dashed numbers" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.001"/>
+  <testcase name="custom user-created categories evaluate correctly based on rule priority" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.006"/>
+  <testcase name="personal mode allows contact but silences or rejects unknown" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.001"/>
+  <testcase name="weekly schedule allows work category during office hours and blocks outside" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.0"/>
+  <testcase name="normalizer matches different representations of same number" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.001"/>
+  <testcase name="disabled mode allows all calls" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.001"/>
+  <testcase name="normalizer correctly handles international, leading zero and dashed numbers" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.0"/>
   <testcase name="privacy mask masks middle digits" classname="pro.nitron.zencall.domain.engine.CallDecisionEngineUnitTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
