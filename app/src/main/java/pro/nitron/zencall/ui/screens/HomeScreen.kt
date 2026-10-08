@@ -2,7 +2,10 @@ package pro.nitron.zencall.ui.screens
 
 import android.app.role.RoleManager
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.provider.CallLog
+import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -28,10 +31,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContactPhone
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -41,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -81,7 +89,10 @@ import pro.nitron.zencall.data.prefs.FirewallPreferences
 import pro.nitron.zencall.data.repository.FirewallRepository
 import pro.nitron.zencall.data.repository.FirewallRepositoryImpl
 import pro.nitron.zencall.domain.model.CallAction
+import pro.nitron.zencall.domain.model.CallMode
 import pro.nitron.zencall.domain.model.CallerCategory
+import pro.nitron.zencall.domain.model.ModeControl
+import pro.nitron.zencall.domain.model.SystemCategories
 import pro.nitron.zencall.domain.model.WeeklySchedule
 import pro.nitron.zencall.ui.theme.ZenShieldGreen
 import pro.nitron.zencall.ui.theme.ZenShieldRed
@@ -95,28 +106,93 @@ fun HomeScreen() {
     val preferences = remember { FirewallPreferences(context) }
 
     val isFirewallEnabled by preferences.isFirewallEnabled.collectAsState(initial = true)
+    val modeControl by preferences.modeControl.collectAsState(initial = ModeControl.AUTO)
     val modes by repository.getAllModes().collectAsState(initial = emptyList())
     val activeMode by repository.getActiveModeFlow().collectAsState(initial = null)
     val categories by repository.getAllCategories().collectAsState(initial = emptyList())
 
-    // Dialog state for creating custom category
     var showCreateCategoryDialog by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
     var newCategoryDesc by remember { mutableStateOf("") }
+    var showCreateModeDialog by remember { mutableStateOf(false) }
+    var newModeName by remember { mutableStateOf("") }
 
-    // Dialog state for configuring weekly schedule for a category in active mode
-    var scheduleTargetCategory by remember { mutableStateOf<CallerCategory?>(null) }
+    var scheduleTargetMode by remember { mutableStateOf<CallMode?>(null) }
     var isScheduleEnabled by remember { mutableStateOf(false) }
-    var selectedDays by remember { mutableStateOf(setOf(1, 2, 3, 4, 5, 6)) } // Shanbeh to Panjshanbeh (or standard Mon-Sat)
+    var selectedDays by remember { mutableStateOf(setOf(6, 7, 1, 2, 3, 4)) }
     var startHourStr by remember { mutableStateOf("08:00") }
     var endHourStr by remember { mutableStateOf("17:00") }
-    var selectedAction by remember { mutableStateOf(CallAction.ALLOW) }
-    var outsideAction by remember { mutableStateOf(CallAction.REJECT) }
+    var whitelistTargetCategory by remember { mutableStateOf<CallerCategory?>(null) }
+
+    // Dialog state for configuring policy across modes for a category
+    var policyTargetCategory by remember { mutableStateOf<CallerCategory?>(null) }
 
     // Dialog state for adding a phone number to a category
     var numberTargetCategory by remember { mutableStateOf<CallerCategory?>(null) }
     var newNumberInput by remember { mutableStateOf("") }
     var newNumberName by remember { mutableStateOf("") }
+
+    // Dialog state for viewing numbers of a category
+    var viewCategoryNumbersTarget by remember { mutableStateOf<CallerCategory?>(null) }
+
+    // Dialog state for Call Screening History Logs
+    var showLogsDialog by remember { mutableStateOf(false) }
+
+    // Dialog state for choosing recent call log to add
+    var showRecentCallsDialogForCategory by remember { mutableStateOf<CallerCategory?>(null) }
+    var recentCallsList by remember { mutableStateOf<List<Pair<String, String?>>>(emptyList()) }
+
+    // Contact Picker Launcher
+    val contactPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickContact()
+    ) { contactUri: Uri? ->
+        if (contactUri != null) {
+            val contentResolver = context.contentResolver
+            var contactId: String? = null
+            var displayName: String? = null
+
+            // Query contact name and ID
+            contentResolver.query(
+                contactUri,
+                arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idIdx = cursor.getColumnIndex(ContactsContract.Contacts._ID)
+                    val nameIdx = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+                    if (idIdx != -1) contactId = cursor.getString(idIdx)
+                    if (nameIdx != -1) displayName = cursor.getString(nameIdx)
+                }
+            }
+
+            if (displayName != null) {
+                newNumberName = displayName ?: ""
+            }
+
+            // Query primary phone number for contact
+            if (contactId != null) {
+                contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                    arrayOf(contactId),
+                    null
+                )?.use { phoneCursor ->
+                    if (phoneCursor.moveToFirst()) {
+                        val numIdx = phoneCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                        if (numIdx != -1) {
+                            val rawNum = phoneCursor.getString(numIdx)
+                            if (!rawNum.isNullOrBlank()) {
+                                newNumberInput = rawNum.replace(" ", "").replace("-", "")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // RoleManager State for Call Screening
     var isCallScreeningRoleHeld by remember { mutableStateOf(false) }
@@ -132,6 +208,7 @@ fun HomeScreen() {
 
     LaunchedEffect(Unit) {
         checkRoleHeld()
+        repository.getActiveMode() // Triggers database seed and loads default modes/categories
     }
 
     val roleLauncher = rememberLauncherForActivityResult(
@@ -155,6 +232,35 @@ fun HomeScreen() {
         label = "GlowColor"
     )
 
+    fun loadRecentCallLogs(): List<Pair<String, String?>> {
+        val list = mutableListOf<Pair<String, String?>>()
+        val seen = mutableSetOf<String>()
+        try {
+            val cursor = context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME),
+                null,
+                null,
+                "${CallLog.Calls.DATE} DESC LIMIT 50"
+            )
+            cursor?.use {
+                val numIdx = it.getColumnIndex(CallLog.Calls.NUMBER)
+                val nameIdx = it.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                while (it.moveToNext()) {
+                    val raw = if (numIdx != -1) it.getString(numIdx) else null
+                    val name = if (nameIdx != -1) it.getString(nameIdx) else null
+                    if (!raw.isNullOrBlank()) {
+                        val cleaned = raw.replace(" ", "").replace("-", "")
+                        if (seen.add(cleaned)) {
+                            list.add(Pair(cleaned, name?.ifBlank { null }))
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return list
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -175,11 +281,24 @@ fun HomeScreen() {
                                 fontSize = 20.sp
                             )
                             Text(
-                                text = "v0.1.0 • Weekly Schedules & Custom Groups",
+                                text = "فایروال هوشمند تماس",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { showLogsDialog = true },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = "تاریخچه مسدودسازی و تماس‌ها",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -326,17 +445,106 @@ fun HomeScreen() {
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Quick Call History / Screening Logs Banner Button
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        println("DEBUG_ZENCALL: showLogsDialog clicked")
+                        showLogsDialog = true
+                    }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "تاریخچه و لاگ فیلتر تماس‌ها",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "مشاهده تماس‌های ورودی و تصمیم فایروال به همراه افزودن سریع",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
 
             // Modes Section
-            Text(
-                text = "حالت‌های کاری تماس (Call Modes)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "حالت‌های کاری تماس",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (modeControl == ModeControl.AUTO) "کنترل خودکار (طبق زمانبندی)" else "کنترل دستی (انتخاب کاربر)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = modeControl == ModeControl.AUTO,
+                        onClick = {
+                            coroutineScope.launch {
+                                preferences.setModeControl(
+                                    if (modeControl == ModeControl.AUTO) ModeControl.MANUAL else ModeControl.AUTO
+                                )
+                            }
+                        },
+                        label = {
+                            Text(if (modeControl == ModeControl.AUTO) "خودکار ⚡" else "دستی 🖐️", fontSize = 12.sp)
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(onClick = { showCreateModeDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "افزودن حالت جدید",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -346,9 +554,18 @@ fun HomeScreen() {
                 shape = RoundedCornerShape(18.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    val currentActiveId = activeMode?.id ?: "mode_personal"
+                    if (modes.isEmpty()) {
+                        Text(
+                            text = "در حال بارگذاری حالت‌های کاری...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                    val currentActiveId = activeMode?.id ?: "mode_default"
                     modes.forEach { mode ->
                         val isSelected = mode.id == currentActiveId
+                        val hasSchedule = mode.schedule.isEnabled
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -358,7 +575,7 @@ fun HomeScreen() {
                                         repository.setActiveModeId(mode.id)
                                     }
                                 }
-                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                                .padding(vertical = 8.dp, horizontal = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
@@ -369,18 +586,82 @@ fun HomeScreen() {
                                     }
                                 }
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = mode.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+                                    )
+                                    if (mode.isSystemDefault) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "(پیش‌فرض پایه)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    if (hasSchedule) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = "زمانبندی دارد",
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                }
+                                val startH = String.format("%02d:%02d", mode.schedule.startMinuteOfDay / 60, mode.schedule.startMinuteOfDay % 60)
+                                val endH = String.format("%02d:%02d", mode.schedule.endMinuteOfDay / 60, mode.schedule.endMinuteOfDay % 60)
+                                val schedText = if (hasSchedule) "⏰ $startH تا $endH" else "فاقد زمانبندی خودکار"
                                 Text(
-                                    text = mode.name,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                                Text(
-                                    text = "رفتار پیش‌فرض: ${mode.defaultAction.name} • ${mode.rules.size} قانون",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = "پیش‌فرض: ${mode.defaultAction.name} • $schedText",
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+
+                            // Schedule button (for non-default modes)
+                            if (!mode.isSystemDefault) {
+                                IconButton(
+                                    onClick = {
+                                        scheduleTargetMode = mode
+                                        isScheduleEnabled = mode.schedule.isEnabled
+                                        selectedDays = mode.schedule.daysOfWeek
+                                        val sMin = mode.schedule.startMinuteOfDay
+                                        val eMin = mode.schedule.endMinuteOfDay
+                                        startHourStr = String.format("%02d:%02d", sMin / 60, sMin % 60)
+                                        endHourStr = String.format("%02d:%02d", eMin / 60, eMin % 60)
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccessTime,
+                                        contentDescription = "تنظیم زمانبندی حالت",
+                                        tint = if (hasSchedule) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+
+                            // Delete button (only custom modes)
+                            if (!mode.isSystemDefault) {
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            repository.deleteMode(mode.id)
+                                        }
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "حذف حالت",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -389,7 +670,7 @@ fun HomeScreen() {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // User Custom & System Categories Section (with Scheduling Action)
+            // User Custom & System Categories Section
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -397,12 +678,12 @@ fun HomeScreen() {
             ) {
                 Column {
                     Text(
-                        text = "دسته‌بندی‌ها و زمانبندی هفتگی",
+                        text = "دسته‌بندی‌ها و رفتار در حالت فعال",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "تعیین ساعت و روزهای مجاز/بلاک بودن هر گروه",
+                        text = "تعیین اکشن هر گروه در حالت «${activeMode?.name ?: "پایه"}»",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -425,117 +706,196 @@ fun HomeScreen() {
                 ),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    val activeRules = activeMode?.rules ?: emptyList()
+                Column(modifier = Modifier.padding(10.dp)) {
+                    if (categories.isEmpty()) {
+                        Text(
+                            text = "در حال بارگذاری دسته‌بندی‌ها...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
 
                     categories.forEach { category ->
-                        val matchingRule = activeRules.firstOrNull { it.categoryId == category.id }
-                        val hasSchedule = matchingRule?.schedule?.isEnabled == true
+                        val currentModeId = activeMode?.id ?: "mode_default"
+                        val activeModeRules by repository.getRulesForMode(currentModeId).collectAsState(initial = emptyList())
+                        val groupAction = activeModeRules.firstOrNull { it.categoryId == category.id }?.action
 
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 10.dp, horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .clip(RoundedCornerShape(10.dp))
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Folder,
-                                contentDescription = null,
-                                tint = if (category.isSystemDefault) MaterialTheme.colorScheme.primary else ZenShieldGreen,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = category.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    if (hasSchedule) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = Icons.Default.Schedule,
-                                            contentDescription = "زمانبندی فعال",
-                                            tint = Color(0xFFF59E0B),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-
-                                if (hasSchedule) {
-                                    val startH = String.format("%02d:%02d", matchingRule!!.schedule.startMinuteOfDay / 60, matchingRule.schedule.startMinuteOfDay % 60)
-                                    val endH = String.format("%02d:%02d", matchingRule.schedule.endMinuteOfDay / 60, matchingRule.schedule.endMinuteOfDay % 60)
-                                    Text(
-                                        text = "⏰ ساعات مجاز: $startH تا $endH (خارج ساعت: ${matchingRule.schedule.outsideScheduleAction ?: CallAction.REJECT})",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFFF59E0B),
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                } else {
-                                    category.description?.let {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (category.holdsNumbers) Icons.Default.Folder else Icons.Default.Phone,
+                                    contentDescription = null,
+                                    tint = if (category.isSystemDefault) MaterialTheme.colorScheme.primary else ZenShieldGreen,
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clickable(enabled = category.holdsNumbers) { viewCategoryNumbersTarget = category }
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = category.holdsNumbers) { viewCategoryNumbersTarget = category }
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = it,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = category.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
                                         )
-                                    }
-                                }
-                            }
-
-                            // Add Number Button
-                            IconButton(onClick = { numberTargetCategory = category }) {
-                                Icon(
-                                    imageVector = Icons.Default.Phone,
-                                    contentDescription = "افزودن شماره",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            // Configure Schedule Button
-                            IconButton(onClick = {
-                                scheduleTargetCategory = category
-                                if (matchingRule != null && matchingRule.schedule.isEnabled) {
-                                    isScheduleEnabled = true
-                                    selectedDays = matchingRule.schedule.daysOfWeek
-                                    val sMin = matchingRule.schedule.startMinuteOfDay
-                                    val eMin = matchingRule.schedule.endMinuteOfDay
-                                    startHourStr = String.format("%02d:%02d", sMin / 60, sMin % 60)
-                                    endHourStr = String.format("%02d:%02d", eMin / 60, eMin % 60)
-                                    selectedAction = matchingRule.action
-                                    outsideAction = matchingRule.schedule.outsideScheduleAction ?: CallAction.REJECT
-                                } else {
-                                    isScheduleEnabled = false
-                                    selectedDays = setOf(1, 2, 3, 4, 5, 6)
-                                    startHourStr = "08:00"
-                                    endHourStr = "17:00"
-                                    selectedAction = CallAction.ALLOW
-                                    outsideAction = CallAction.REJECT
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = "تنظیم زمانبندی",
-                                    tint = if (hasSchedule) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            // Delete button (only for non-system)
-                            if (!category.isSystemDefault) {
-                                IconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            repository.deleteCategory(category.id)
+                                        if (category.isBlockList) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "(مسدود قطعی)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = ZenShieldRed
+                                            )
                                         }
                                     }
+                                }
+
+                                // Settings button to configure this category across all modes
+                                if (!category.isBlockList) {
+                                    IconButton(
+                                        onClick = { policyTargetCategory = category },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Tune,
+                                            contentDescription = "تنظیم در تمام حالت‌ها",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
+                                // If category holds numbers, allow adding and viewing numbers
+                                if (category.holdsNumbers) {
+                                    IconButton(
+                                        onClick = { numberTargetCategory = category },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "افزودن شماره",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            recentCallsList = loadRecentCallLogs()
+                                            showRecentCallsDialogForCategory = category
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.History,
+                                            contentDescription = "افزودن از تاریخچه تماس‌ها",
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                // Delete button (only for custom user categories)
+                                if (!category.isSystemDefault) {
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                repository.deleteCategory(category.id)
+                                            }
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "حذف گروه",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Row 2: 3-state Action Selector for Current Active Mode
+                            if (!category.isBlockList) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 32.dp, top = 2.dp, bottom = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "حذف گروه",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(20.dp)
+                                    Text(
+                                        text = "در «${activeMode?.name ?: "پایه"}»:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    AssistChip(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val next = if (groupAction == CallAction.ALLOW) null else CallAction.ALLOW
+                                                repository.setCategoryAction(currentModeId, category.id, next)
+                                            }
+                                        },
+                                        label = { Text("مجاز", fontSize = 11.sp) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (groupAction == CallAction.ALLOW) ZenShieldGreen.copy(alpha = 0.25f) else Color.Transparent,
+                                            labelColor = if (groupAction == CallAction.ALLOW) ZenShieldGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = if (groupAction == CallAction.ALLOW) ZenShieldGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                        ),
+                                        modifier = Modifier.height(28.dp)
+                                    )
+
+                                    AssistChip(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val next = if (groupAction == CallAction.SILENCE) null else CallAction.SILENCE
+                                                repository.setCategoryAction(currentModeId, category.id, next)
+                                            }
+                                        },
+                                        label = { Text("سایلنت", fontSize = 11.sp) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (groupAction == CallAction.SILENCE) Color(0xFFF59E0B).copy(alpha = 0.25f) else Color.Transparent,
+                                            labelColor = if (groupAction == CallAction.SILENCE) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = if (groupAction == CallAction.SILENCE) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                        ),
+                                        modifier = Modifier.height(28.dp)
+                                    )
+
+                                    AssistChip(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val next = if (groupAction == CallAction.REJECT) null else CallAction.REJECT
+                                                repository.setCategoryAction(currentModeId, category.id, next)
+                                            }
+                                        },
+                                        label = { Text("بلاک", fontSize = 11.sp) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (groupAction == CallAction.REJECT) ZenShieldRed.copy(alpha = 0.25f) else Color.Transparent,
+                                            labelColor = if (groupAction == CallAction.REJECT) ZenShieldRed else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = if (groupAction == CallAction.REJECT) ZenShieldRed else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                        ),
+                                        modifier = Modifier.height(28.dp)
                                     )
                                 }
                             }
@@ -553,7 +913,13 @@ fun HomeScreen() {
         val cat = numberTargetCategory!!
         AlertDialog(
             onDismissRequest = { numberTargetCategory = null },
-            title = { Text("افزودن شماره به «${cat.name}»", fontWeight = FontWeight.Bold) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("افزودن شماره به «${cat.name}»", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
             text = {
                 Column {
                     Text(
@@ -566,6 +932,15 @@ fun HomeScreen() {
                         value = newNumberInput,
                         onValueChange = { newNumberInput = it },
                         label = { Text("شماره تلفن") },
+                        trailingIcon = {
+                            IconButton(onClick = { contactPickerLauncher.launch(null) }) {
+                                Icon(
+                                    imageVector = Icons.Default.ContactPhone,
+                                    contentDescription = "انتخاب از مخاطبین",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -575,6 +950,41 @@ fun HomeScreen() {
                         label = { Text("نام مخاطب (اختیاری)") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { contactPickerLauncher.launch(null) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContactPhone,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("دفترچه تلفن", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                recentCallsList = loadRecentCallLogs()
+                                showRecentCallsDialogForCategory = cat
+                                numberTargetCategory = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("لیست تماس‌ها", fontSize = 12.sp)
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -605,16 +1015,169 @@ fun HomeScreen() {
         )
     }
 
-    // Dialog 2: Weekly Schedule Configuration
-    if (scheduleTargetCategory != null) {
-        val cat = scheduleTargetCategory!!
+    // Dialog: Configure Category Policy Across All Modes
+    if (policyTargetCategory != null) {
+        val cat = policyTargetCategory!!
         AlertDialog(
-            onDismissRequest = { scheduleTargetCategory = null },
+            onDismissRequest = { policyTargetCategory = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("تنظیم رفتار گروه «${cat.name}»", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("تعیین عملکرد تماس این دسته در هر حالت کاری", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (modes.isEmpty()) {
+                        Text("حالتی یافت نشد.", style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    modes.forEach { mode ->
+                        val currentModeRules by repository.getRulesForMode(mode.id).collectAsState(initial = emptyList())
+                        val action = currentModeRules.firstOrNull { it.categoryId == cat.id }?.action
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = mode.name,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        if (mode.isSystemDefault) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "(پایه)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+
+                                    val statusText = when (action) {
+                                        CallAction.ALLOW -> "✅ مجاز"
+                                        CallAction.SILENCE -> "🔕 سایلنت"
+                                        CallAction.REJECT -> "⛔ مسدود"
+                                        null -> "ارث‌بری: ${mode.defaultAction.name}"
+                                    }
+                                    Text(
+                                        text = statusText,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = when (action) {
+                                            CallAction.ALLOW -> ZenShieldGreen
+                                            CallAction.SILENCE -> Color(0xFFF59E0B)
+                                            CallAction.REJECT -> ZenShieldRed
+                                            null -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    AssistChip(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val next = if (action == CallAction.ALLOW) null else CallAction.ALLOW
+                                                repository.setCategoryAction(mode.id, cat.id, next)
+                                            }
+                                        },
+                                        label = { Text("مجاز", fontSize = 11.sp) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (action == CallAction.ALLOW) ZenShieldGreen.copy(alpha = 0.25f) else Color.Transparent,
+                                            labelColor = if (action == CallAction.ALLOW) ZenShieldGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = if (action == CallAction.ALLOW) ZenShieldGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                        ),
+                                        modifier = Modifier.weight(1f).height(32.dp)
+                                    )
+
+                                    AssistChip(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val next = if (action == CallAction.SILENCE) null else CallAction.SILENCE
+                                                repository.setCategoryAction(mode.id, cat.id, next)
+                                            }
+                                        },
+                                        label = { Text("سایلنت", fontSize = 11.sp) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (action == CallAction.SILENCE) Color(0xFFF59E0B).copy(alpha = 0.25f) else Color.Transparent,
+                                            labelColor = if (action == CallAction.SILENCE) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = if (action == CallAction.SILENCE) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                        ),
+                                        modifier = Modifier.weight(1f).height(32.dp)
+                                    )
+
+                                    AssistChip(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val next = if (action == CallAction.REJECT) null else CallAction.REJECT
+                                                repository.setCategoryAction(mode.id, cat.id, next)
+                                            }
+                                        },
+                                        label = { Text("بلاک", fontSize = 11.sp) },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (action == CallAction.REJECT) ZenShieldRed.copy(alpha = 0.25f) else Color.Transparent,
+                                            labelColor = if (action == CallAction.REJECT) ZenShieldRed else MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = if (action == CallAction.REJECT) ZenShieldRed else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                        ),
+                                        modifier = Modifier.weight(1f).height(32.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { policyTargetCategory = null }) {
+                    Text("بستن")
+                }
+            }
+        )
+    }
+
+    // Dialog 2: Mode Schedule Configuration
+    if (scheduleTargetMode != null) {
+        val targetMode = scheduleTargetMode!!
+        AlertDialog(
+            onDismissRequest = { scheduleTargetMode = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(imageVector = Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFFF59E0B))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("زمانبندی گروه «${cat.name}»", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("زمانبندی خودکار حالت «${targetMode.name}»", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
             },
             text = {
@@ -624,7 +1187,7 @@ fun HomeScreen() {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("فعال‌سازی زمانبندی ساعتی/هفتگی", fontWeight = FontWeight.SemiBold)
+                        Text("فعال‌سازی زمانبندی خودکار", fontWeight = FontWeight.SemiBold)
                         Switch(
                             checked = isScheduleEnabled,
                             onCheckedChange = { isScheduleEnabled = it }
@@ -640,7 +1203,6 @@ fun HomeScreen() {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Day chips: 6 (Shanbeh) .. 5 (Jomeh) or 1..7
                         val dayNames = listOf(
                             6 to "شنبه",
                             7 to "یکشنبه",
@@ -702,29 +1264,9 @@ fun HomeScreen() {
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "در این بازه زمانی شماره‌ها:",
+                            text = "💡 در این بازه، در حالت خودکار (AUTO) این حالت فعال خواهد بود.",
                             style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "✅ مجاز (ALLOW) — زنگ می‌خورد",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = ZenShieldGreen,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "خارج از این ساعات یا روزهای دیگر:",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "⛔ مسدود (REJECT) — بلاک خودکار",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = ZenShieldRed,
-                            fontWeight = FontWeight.SemiBold
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -732,8 +1274,6 @@ fun HomeScreen() {
             confirmButton = {
                 Button(
                     onClick = {
-                        val activeModeId = activeMode?.id ?: "mode_personal"
-
                         fun parseMin(str: String, default: Int): Int {
                             val parts = str.split(":")
                             if (parts.size == 2) {
@@ -747,23 +1287,16 @@ fun HomeScreen() {
                         val sMin = parseMin(startHourStr, 8 * 60)
                         val eMin = parseMin(endHourStr, 17 * 60)
 
-                        val schedule = WeeklySchedule(
+                        val updatedSchedule = WeeklySchedule(
                             isEnabled = isScheduleEnabled,
                             daysOfWeek = selectedDays,
                             startMinuteOfDay = sMin,
-                            endMinuteOfDay = eMin,
-                            outsideScheduleAction = if (isScheduleEnabled) outsideAction else null
+                            endMinuteOfDay = eMin
                         )
 
                         coroutineScope.launch {
-                            repository.setRule(
-                                modeId = activeModeId,
-                                categoryId = cat.id,
-                                action = selectedAction,
-                                priority = 20, // High priority for scheduled group
-                                schedule = schedule
-                            )
-                            scheduleTargetCategory = null
+                            repository.updateMode(targetMode.copy(schedule = updatedSchedule))
+                            scheduleTargetMode = null
                         }
                     }
                 ) {
@@ -771,7 +1304,69 @@ fun HomeScreen() {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { scheduleTargetCategory = null }) {
+                TextButton(onClick = { scheduleTargetMode = null }) {
+                    Text("انصراف")
+                }
+            }
+        )
+    }
+
+    // Dialog: Create Mode Dialog
+    if (showCreateModeDialog) {
+        var modeDefaultAction by remember { mutableStateOf(CallAction.REJECT) }
+        AlertDialog(
+            onDismissRequest = { showCreateModeDialog = false },
+            title = { Text(text = "ایجاد حالت کاری جدید", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newModeName,
+                        onValueChange = { newModeName = it },
+                        label = { Text("نام حالت (مثال: جلسه کاری، استراحت)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("رفتار پیش‌فرض برای تماس‌های متفرقه:", style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = modeDefaultAction == CallAction.REJECT,
+                            onClick = { modeDefaultAction = CallAction.REJECT },
+                            label = { Text("مسدودسازی") }
+                        )
+                        FilterChip(
+                            selected = modeDefaultAction == CallAction.SILENCE,
+                            onClick = { modeDefaultAction = CallAction.SILENCE },
+                            label = { Text("بی‌صدا") }
+                        )
+                        FilterChip(
+                            selected = modeDefaultAction == CallAction.ALLOW,
+                            onClick = { modeDefaultAction = CallAction.ALLOW },
+                            label = { Text("آزاد") }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newModeName.isNotBlank()) {
+                            coroutineScope.launch {
+                                repository.createMode(
+                                    name = newModeName.trim(),
+                                    defaultAction = modeDefaultAction
+                                )
+                                newModeName = ""
+                                showCreateModeDialog = false
+                            }
+                        }
+                    }
+                ) {
+                    Text("ایجاد")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateModeDialog = false }) {
                     Text("انصراف")
                 }
             }
@@ -828,6 +1423,374 @@ fun HomeScreen() {
             dismissButton = {
                 TextButton(onClick = { showCreateCategoryDialog = false }) {
                     Text("انصراف")
+                }
+            }
+        )
+    }
+
+    // Dialog 4: Recent Calls Picker Dialog
+    if (showRecentCallsDialogForCategory != null) {
+        val cat = showRecentCallsDialogForCategory!!
+        AlertDialog(
+            onDismissRequest = { showRecentCallsDialogForCategory = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("انتخاب از تماس‌های اخیر", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(350.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (recentCallsList.isEmpty()) {
+                        Text(
+                            text = "تماسی در تاریخچه گوشی یافت نشد یا دسترسی تماس داده نشده است.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "شماره مورد نظر را لمس کنید تا انتخاب شود:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        recentCallsList.forEach { (number, contactName) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        newNumberInput = number
+                                        newNumberName = contactName ?: ""
+                                        numberTargetCategory = cat
+                                        showRecentCallsDialogForCategory = null
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = contactName ?: number,
+                                        fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    if (contactName != null) {
+                                        Text(
+                                            text = number,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "انتخاب",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showRecentCallsDialogForCategory = null }) {
+                    Text("بستن")
+                }
+            }
+        )
+    }
+
+    // Dialog 5: View & Manage Category Numbers
+    if (viewCategoryNumbersTarget != null) {
+        val cat = viewCategoryNumbersTarget!!
+        val numbersFlow by repository.getNumbersForCategory(cat.id).collectAsState(initial = emptyList())
+
+        AlertDialog(
+            onDismissRequest = { viewCategoryNumbersTarget = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("شماره‌های «${cat.name}»", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(350.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (numbersFlow.isEmpty()) {
+                        Text(
+                            text = "هنوز شماره‌ای به این دسته اضافه نشده است.\nمی‌توانید با زدن آیکون گوشی تلفن شماره جدید اضافه کنید.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        numbersFlow.forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.displayName ?: item.rawNumber,
+                                        fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    if (item.displayName != null) {
+                                        Text(
+                                            text = item.rawNumber,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        text = "نرمال‌شده: ${item.normalizedNumber}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            repository.deleteNumberById(item.id)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "حذف شماره",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetCat = cat
+                        viewCategoryNumbersTarget = null
+                        numberTargetCategory = targetCat
+                    }
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("افزودن شماره")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewCategoryNumbersTarget = null }) {
+                    Text("بستن")
+                }
+            }
+        )
+    }
+
+    // Dialog 6: Screening History Logs
+    if (showLogsDialog) {
+        val logs by repository.getScreeningLogs(100).collectAsState(initial = emptyList())
+        var numberToAddToCategoryFromLog by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = {
+                showLogsDialog = false
+                numberToAddToCategoryFromLog = null
+            },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("تاریخچه فیلتر تماس‌ها", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+
+                    if (logs.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    repository.clearLogs()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "پاک کردن تاریخچه",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (logs.isEmpty()) {
+                        Text(
+                            text = "هنوز تماسی پردازش نشده است.\nبه محض دریافت تماس ورودی، نتیجه تصمیم فایروال با جزئیات دقیق اینجا ثبت می‌شود.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "💡 نکته: برای افزودن سریع هر شماره به گروه‌ها، روی شماره لمس کنید.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        logs.forEach { logItem ->
+                            val isRejected = logItem.action == CallAction.REJECT
+                            val isSilenced = logItem.action == CallAction.SILENCE
+                            val badgeColor = if (isRejected) ZenShieldRed else if (isSilenced) Color(0xFFF59E0B) else ZenShieldGreen
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        val num = logItem.rawNumber ?: logItem.normalizedNumber
+                                        if (!num.isNullOrBlank()) {
+                                            numberToAddToCategoryFromLog = num
+                                        }
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = logItem.callerName ?: logItem.rawNumber ?: "ناشناس/Private",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = logItem.action.name,
+                                                color = badgeColor,
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+
+                                        if (logItem.callerName != null && logItem.rawNumber != null) {
+                                            Text(
+                                                text = logItem.rawNumber,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        Text(
+                                            text = "دلیل: ${logItem.reason} (${logItem.latencyMs}ms)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                repository.deleteLogById(logItem.id)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "حذف لاگ",
+                                            tint = MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Sub-dialog / Selector when a number from log is tapped to be added to a category
+                    if (numberToAddToCategoryFromLog != null) {
+                        val num = numberToAddToCategoryFromLog!!
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "افزودن شماره $num به کدام گروه؟",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        categories.forEach { cat ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable {
+                                        coroutineScope.launch {
+                                            repository.addNumberToCategory(
+                                                categoryId = cat.id,
+                                                rawNumber = num,
+                                                displayName = null
+                                            )
+                                            numberToAddToCategoryFromLog = null
+                                        }
+                                    }
+                                    .padding(vertical = 8.dp, horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(cat.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                Icon(imageVector = Icons.Default.Add, contentDescription = null, tint = ZenShieldGreen, modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLogsDialog = false }) {
+                    Text("بستن")
                 }
             }
         )

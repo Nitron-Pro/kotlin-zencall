@@ -1,24 +1,29 @@
 package pro.nitron.zencall.domain.model
 
-import java.time.DayOfWeek
-import java.time.LocalTime
-
 enum class CallAction {
     ALLOW,
     SILENCE,
     REJECT
 }
 
-/**
- * Built-in default category keys that ZenCall provides out-of-the-box.
- * Users can also create arbitrary custom categories with unique string IDs.
- */
+enum class ModeControl {
+    AUTO,
+    MANUAL
+}
+
 object SystemCategories {
     const val ALLOWED_NUMBER = "ALLOWED_NUMBER"
     const val BLOCKED_NUMBER = "BLOCKED_NUMBER"
     const val FAVORITE = "FAVORITE"
     const val CONTACT = "CONTACT"
     const val UNKNOWN = "UNKNOWN"
+    const val PRIVATE = "PRIVATE"
+
+    val virtualIds = setOf(CONTACT, UNKNOWN, PRIVATE)
+    val numberListIds = setOf(ALLOWED_NUMBER, BLOCKED_NUMBER, FAVORITE)
+
+    fun holdsNumbers(categoryId: String): Boolean = categoryId !in virtualIds
+    fun isBlockList(categoryId: String): Boolean = categoryId == BLOCKED_NUMBER
 }
 
 data class CallerCategory(
@@ -29,39 +34,48 @@ data class CallerCategory(
     val colorHex: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 ) {
+    val holdsNumbers: Boolean get() = SystemCategories.holdsNumbers(id)
+    val isBlockList: Boolean get() = SystemCategories.isBlockList(id)
+
     companion object {
         val Allowed = CallerCategory(
             id = SystemCategories.ALLOWED_NUMBER,
-            name = "Allowed Numbers (Whitelist)",
+            name = "مجاز",
             isSystemDefault = true,
-            description = "Numbers explicitly granted full bypass permission"
+            description = "وایت‌لیست عمومی"
         )
         val Blocked = CallerCategory(
             id = SystemCategories.BLOCKED_NUMBER,
-            name = "Blocked Numbers (Blacklist)",
+            name = "مسدود",
             isSystemDefault = true,
-            description = "Numbers explicitly blocked"
+            description = "همیشه قطع می‌شود"
         )
         val Favorite = CallerCategory(
             id = SystemCategories.FAVORITE,
-            name = "Favorite Contacts",
+            name = "VIP",
             isSystemDefault = true,
-            description = "Starred or VIP contacts"
+            description = "شماره‌های ویژه"
         )
         val Contact = CallerCategory(
             id = SystemCategories.CONTACT,
-            name = "Contacts",
+            name = "مخاطبین",
             isSystemDefault = true,
-            description = "Anyone in device address book"
+            description = "دفترچه تلفن گوشی"
         )
         val Unknown = CallerCategory(
             id = SystemCategories.UNKNOWN,
-            name = "Unknown Callers",
+            name = "ناشناس",
             isSystemDefault = true,
-            description = "Numbers not saved in contacts or private caller IDs"
+            description = "شماره ذخیره‌نشده"
+        )
+        val Private = CallerCategory(
+            id = SystemCategories.PRIVATE,
+            name = "مخفی",
+            isSystemDefault = true,
+            description = "بدون شناسه تماس"
         )
 
-        val defaultCategories = listOf(Allowed, Blocked, Favorite, Contact, Unknown)
+        val defaultCategories = listOf(Allowed, Blocked, Favorite, Contact, Unknown, Private)
     }
 }
 
@@ -81,26 +95,20 @@ data class CallerIdentity(
                 rawNumber.equals("RESTRICTED", ignoreCase = true)
 }
 
-/**
- * Weekly Schedule rule:
- * e.g., daysOfWeek = [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
- * startMinute = 9 * 60 (09:00), endMinute = 17 * 60 (17:00)
- */
 data class WeeklySchedule(
     val isEnabled: Boolean = false,
-    val daysOfWeek: Set<Int> = setOf(1, 2, 3, 4, 5, 6, 7), // 1 = Monday .. 7 = Sunday (java.time.DayOfWeek.value)
-    val startMinuteOfDay: Int = 0, // 0 .. 1439 (minute from 00:00)
+    val daysOfWeek: Set<Int> = setOf(1, 2, 3, 4, 5, 6, 7),
+    val startMinuteOfDay: Int = 0,
     val endMinuteOfDay: Int = 1439,
-    val outsideScheduleAction: CallAction? = null // action to use if outside schedule (e.g. REJECT), or null to skip rule
+    val outsideScheduleAction: CallAction? = null
 ) {
     fun isMatching(dayOfWeekValue: Int, minuteOfDay: Int): Boolean {
-        if (!isEnabled) return true
+        if (!isEnabled) return false
         if (dayOfWeekValue !in daysOfWeek) return false
 
         return if (startMinuteOfDay <= endMinuteOfDay) {
             minuteOfDay in startMinuteOfDay..endMinuteOfDay
         } else {
-            // Overnight span e.g. 22:00 to 06:00
             minuteOfDay >= startMinuteOfDay || minuteOfDay <= endMinuteOfDay
         }
     }
@@ -119,8 +127,23 @@ data class CallMode(
     val id: String,
     val name: String,
     val isEnabled: Boolean = true,
-    val defaultAction: CallAction = CallAction.SILENCE,
+    val isSystemDefault: Boolean = false,
+    val defaultAction: CallAction = CallAction.REJECT,
+    val schedulePriority: Int = 0,
+    val schedule: WeeklySchedule = WeeklySchedule(isEnabled = false),
     val rules: List<CallRule> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    /**
+     * Returns explicit action configured for this category in this mode (ALLOW, SILENCE, REJECT),
+     * or null if category has no explicit override (inheriting mode's defaultAction).
+     */
+    fun getCategoryAction(categoryId: String): CallAction? {
+        return rules.firstOrNull { it.categoryId == categoryId }?.action
+    }
+
+    fun isCategoryWhitelisted(categoryId: String): Boolean {
+        return getCategoryAction(categoryId) == CallAction.ALLOW
+    }
+}

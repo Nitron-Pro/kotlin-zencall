@@ -11,7 +11,13 @@ data class CallModeEntity(
     @PrimaryKey val id: String,
     val name: String,
     val isEnabled: Boolean = true,
-    val defaultAction: CallAction = CallAction.SILENCE,
+    val isSystemDefault: Boolean = false,
+    val defaultAction: CallAction = CallAction.REJECT,
+    val schedulePriority: Int = 0,
+    val isScheduleEnabled: Boolean = false,
+    val scheduleDaysCsv: String = "1,2,3,4,5,6,7",
+    val startMinuteOfDay: Int = 0,
+    val endMinuteOfDay: Int = 1439,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -85,4 +91,23 @@ data class CategoryNumberEntity(
     val normalizedNumber: String,
     val displayName: String? = null,
     val addedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "screening_logs",
+    indices = [
+        Index(value = ["timestamp"]),
+        Index(value = ["normalizedNumber"])
+    ]
+)
+data class ScreeningLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val rawNumber: String?,
+    val normalizedNumber: String?,
+    val callerName: String?,
+    val action: CallAction,
+    val reason: String,
+    val modeName: String?,
+    val timestamp: Long = System.currentTimeMillis(),
+    val latencyMs: Long = 0
 )

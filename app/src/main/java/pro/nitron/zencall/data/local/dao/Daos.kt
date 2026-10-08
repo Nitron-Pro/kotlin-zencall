@@ -12,6 +12,7 @@ import pro.nitron.zencall.data.local.entity.CallModeEntity
 import pro.nitron.zencall.data.local.entity.CallRuleEntity
 import pro.nitron.zencall.data.local.entity.CallerCategoryEntity
 import pro.nitron.zencall.data.local.entity.CategoryNumberEntity
+import pro.nitron.zencall.data.local.entity.ScreeningLogEntity
 
 @Dao
 interface ModeDao {
@@ -54,6 +55,9 @@ interface CategoryDao {
 
 @Dao
 interface RuleDao {
+    @Query("SELECT * FROM call_rules ORDER BY priority DESC")
+    fun getAllRulesFlow(): Flow<List<CallRuleEntity>>
+
     @Query("SELECT * FROM call_rules WHERE modeId = :modeId ORDER BY priority DESC")
     fun getRulesForModeFlow(modeId: String): Flow<List<CallRuleEntity>>
 
@@ -89,4 +93,19 @@ interface NumberDao {
 
     @Query("DELETE FROM category_numbers WHERE id = :id")
     suspend fun deleteNumberById(id: Long)
+}
+
+@Dao
+interface ScreeningLogDao {
+    @Query("SELECT * FROM screening_logs ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecentLogsFlow(limit: Int = 100): Flow<List<ScreeningLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLog(log: ScreeningLogEntity)
+
+    @Query("DELETE FROM screening_logs")
+    suspend fun clearLogs()
+
+    @Query("DELETE FROM screening_logs WHERE id = :id")
+    suspend fun deleteLogById(id: Long)
 }

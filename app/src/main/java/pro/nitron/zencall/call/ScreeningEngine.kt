@@ -7,13 +7,14 @@ import pro.nitron.zencall.data.repository.FirewallRepository
 import pro.nitron.zencall.data.repository.FirewallRepositoryImpl
 import pro.nitron.zencall.data.repository.ScreeningSnapshot
 import pro.nitron.zencall.domain.engine.CallDecisionEngine
+import pro.nitron.zencall.domain.engine.ModeResolver
 import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallerIdentity
 import pro.nitron.zencall.domain.model.SystemCategories
 import pro.nitron.zencall.domain.util.CallNumberNormalizer
 
 sealed class ScreeningDecision {
-    data object Allow : ScreeningDecision()
+    data class Allow(val reason: String = "Allowed") : ScreeningDecision()
     data class Silence(val reason: String) : ScreeningDecision()
     data class Block(
         val reason: String,
@@ -32,22 +33,31 @@ class ScreeningEngine(
     private val normalizer = CallNumberNormalizer(defaultCountryIso = "IR", defaultCountryPrefix = "98")
     private val domainEngine = CallDecisionEngine()
 
-    suspend fun evaluateFromRepository(rawNumber: String?): ScreeningDecision {
-        val snapshot = repository.getFastScreeningSnapshot()
-        return evaluateWithSnapshot(rawNumber, snapshot)
-    }
-
-    fun evaluateWithSnapshot(rawNumber: String?, snapshot: ScreeningSnapshot): ScreeningDecision {
+    fun evaluateWithSnapshot(rawNumber: String?, snapshot: ScreeningSnapshot): Pair<ScreeningDecision, CallerIdentity> {
         if (!snapshot.isFirewallEnabled) {
-            return ScreeningDecision.Allow
+            val emptyCaller = CallerIdentity(rawNumber = rawNumber, normalizedNumber = normalizer.normalize(rawNumber))
+            return Pair(ScreeningDecision.Allow("Firewall Disabled"), emptyCaller)
         }
 
         val normalized = normalizer.normalize(rawNumber)
-        val isContact = if (normalized != null) isNumberInContacts(context, normalized) else false
+        val contactName = if (normalized != null) getContactName(context, normalized) else null
+        val isContact = contactName != null
 
         // Match categories from persistent fast lookup map
+        // 1. Exact match on normalized number
+        // 2. Suffix match fallback (last 7 to 9 digits) to handle national vs international format variations (+98 vs 0)
         val matchedCategories = if (normalized != null) {
-            snapshot.numbersToCategoriesMap[normalized] ?: emptySet()
+            val exact = snapshot.numbersToCategoriesMap[normalized]
+            if (!exact.isNullOrEmpty()) {
+                exact
+            } else {
+                val digitsOnly = normalized.replace("+", "")
+                val suffix7 = if (digitsOnly.length >= 7) digitsOnly.takeLast(7) else digitsOnly
+                snapshot.numbersToCategoriesMap.entries.firstOrNull { (key, _) ->
+                    val keyDigits = key.replace("+", "")
+                    normalizer.matches(normalized, key) || (keyDigits.length >= 7 && keyDigits.endsWith(suffix7))
+                }?.value ?: emptySet()
+            }
         } else {
             emptySet()
         }
@@ -56,17 +66,6 @@ class ScreeningEngine(
         val isBlocked = matchedCategories.contains(SystemCategories.BLOCKED_NUMBER)
         val isFavorite = matchedCategories.contains(SystemCategories.FAVORITE)
 
-        // Custom categories assigned to this number by the user
-        val customCategories = matchedCategories.filter {
-            it !in setOf(
-                SystemCategories.ALLOWED_NUMBER,
-                SystemCategories.BLOCKED_NUMBER,
-                SystemCategories.FAVORITE,
-                SystemCategories.CONTACT,
-                SystemCategories.UNKNOWN
-            )
-        }.toSet()
-
         val caller = CallerIdentity(
             rawNumber = rawNumber,
             normalizedNumber = normalized,
@@ -74,13 +73,27 @@ class ScreeningEngine(
             isFavorite = isFavorite,
             isBlockedList = isBlocked,
             isAllowedList = isAllowed,
-            customCategoryIds = customCategories
+            customCategoryIds = matchedCategories
         )
 
-        val decision = domainEngine.decide(caller, snapshot.activeMode)
+        val resolvedMode = ModeResolver.resolve(
+            modes = snapshot.allModes.ifEmpty { listOfNotNull(snapshot.activeMode) },
+            control = snapshot.modeControl,
+            manualModeId = snapshot.manualModeId
+        ) ?: snapshot.activeMode
 
-        return when (decision.action) {
-            CallAction.ALLOW -> ScreeningDecision.Allow
+        android.util.Log.i("ZenCallScreening", "Screening caller: raw=$rawNumber, norm=$normalized, isContact=$isContact, categories=$matchedCategories, mode=${resolvedMode?.name} (id=${resolvedMode?.id}), rulesCount=${resolvedMode?.rules?.size}")
+        if (resolvedMode != null) {
+            for (rule in resolvedMode.rules) {
+                android.util.Log.i("ZenCallScreening", "Mode rule: cat=${rule.categoryId}, action=${rule.action}")
+            }
+        }
+
+        val decision = domainEngine.decide(caller, resolvedMode)
+        android.util.Log.i("ZenCallScreening", "Engine decision: action=${decision.action}, reason=${decision.reason}, matchedCat=${decision.matchedCategoryId}")
+
+        val screeningDecision = when (decision.action) {
+            CallAction.ALLOW -> ScreeningDecision.Allow(decision.reason)
             CallAction.SILENCE -> ScreeningDecision.Silence(decision.reason)
             CallAction.REJECT -> ScreeningDecision.Block(
                 reason = decision.reason,
@@ -89,22 +102,44 @@ class ScreeningEngine(
                 shouldSkipNotification = true
             )
         }
+
+        return Pair(screeningDecision, caller)
+    }
+
+    suspend fun evaluateFromRepositoryWithDetails(rawNumber: String?): Pair<ScreeningDecision, CallerIdentity> {
+        // Ensure fresh snapshot from database and preferences (avoids cold cache race condition)
+        val snapshot = repository.getFastScreeningSnapshot()
+        return evaluateWithSnapshot(rawNumber, snapshot)
+    }
+
+    suspend fun evaluateFromRepository(rawNumber: String?): ScreeningDecision {
+        return evaluateFromRepositoryWithDetails(rawNumber).first
     }
 
     private fun isNumberInContacts(context: Context, number: String): Boolean {
+        return getContactName(context, number) != null
+    }
+
+    fun getContactName(context: Context, number: String): String? {
         return try {
             val uri = Uri.withAppendedPath(
                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
                 Uri.encode(number)
             )
-            val projection = arrayOf(ContactsContract.PhoneLookup._ID)
+            val projection = arrayOf(
+                ContactsContract.PhoneLookup._ID,
+                ContactsContract.PhoneLookup.DISPLAY_NAME
+            )
             context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                cursor.count > 0
-            } ?: false
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (nameIdx != -1) cursor.getString(nameIdx) else null
+                } else null
+            }
         } catch (_: SecurityException) {
-            false
+            null
         } catch (_: Exception) {
-            false
+            null
         }
     }
 }

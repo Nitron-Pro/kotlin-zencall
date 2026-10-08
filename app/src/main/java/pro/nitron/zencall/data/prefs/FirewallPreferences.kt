@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import pro.nitron.zencall.domain.model.ModeControl
 
 val Context.dataStore by preferencesDataStore(name = "zencall_settings")
 
@@ -31,6 +32,7 @@ class FirewallPreferences(private val context: Context) {
         val KEY_SKIP_CALL_LOG = booleanPreferencesKey("skip_call_log")
         val KEY_SKIP_NOTIFICATION = booleanPreferencesKey("skip_notification")
         val KEY_ACTIVE_MODE_ID = stringPreferencesKey("active_mode_id")
+        val KEY_MODE_CONTROL = stringPreferencesKey("mode_control")
 
         fun normalizeNumber(raw: String): String {
             return raw.replace(Regex("[^0-9+]"), "").trim()
@@ -48,6 +50,28 @@ class FirewallPreferences(private val context: Context) {
     suspend fun setActiveModeId(modeId: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_ACTIVE_MODE_ID] = modeId
+        }
+    }
+
+    val modeControl: Flow<ModeControl> = context.dataStore.data.map { prefs ->
+        try {
+            ModeControl.valueOf(prefs[KEY_MODE_CONTROL] ?: ModeControl.AUTO.name)
+        } catch (_: Exception) {
+            ModeControl.AUTO
+        }
+    }
+
+    suspend fun getModeControl(): ModeControl {
+        return try {
+            ModeControl.valueOf(context.dataStore.data.first()[KEY_MODE_CONTROL] ?: ModeControl.AUTO.name)
+        } catch (_: Exception) {
+            ModeControl.AUTO
+        }
+    }
+
+    suspend fun setModeControl(control: ModeControl) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_MODE_CONTROL] = control.name
         }
     }
 

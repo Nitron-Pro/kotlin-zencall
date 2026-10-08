@@ -2,10 +2,8 @@ package pro.nitron.zencall.domain.engine
 
 import pro.nitron.zencall.domain.model.CallAction
 import pro.nitron.zencall.domain.model.CallMode
-import pro.nitron.zencall.domain.model.CallRule
 import pro.nitron.zencall.domain.model.CallerIdentity
 import pro.nitron.zencall.domain.model.SystemCategories
-import java.time.LocalDateTime
 
 data class DecisionResult(
     val action: CallAction,
@@ -20,8 +18,9 @@ enum class FailSafePolicy {
 }
 
 /**
- * Pure Kotlin Decision Engine (Domain Layer)
- * Independent of Android Framework for deterministic, sub-millisecond execution and testability.
+ * Mode default = block/silence everyone.
+ * Number groups and virtual sources (contacts / unknown / private) only add whitelist exceptions.
+ * Explicit block list always wins.
  */
 class CallDecisionEngine(
     private val failSafePolicy: FailSafePolicy = FailSafePolicy.ALLOW
@@ -29,127 +28,77 @@ class CallDecisionEngine(
 
     fun decide(
         caller: CallerIdentity,
-        activeMode: CallMode?,
-        callTime: LocalDateTime = LocalDateTime.now()
+        activeMode: CallMode?
     ): DecisionResult {
         val start = System.currentTimeMillis()
 
-        // 1. Fail-Safe: If mode is absent or inactive
         if (activeMode == null || !activeMode.isEnabled) {
+            val action = if (failSafePolicy == FailSafePolicy.ALLOW) CallAction.ALLOW else CallAction.REJECT
             return DecisionResult(
-                action = CallAction.ALLOW,
+                action = action,
                 reason = "Firewall mode is inactive or disabled",
                 evaluationTimeMs = System.currentTimeMillis() - start
             )
         }
 
-        val dayOfWeekValue = callTime.dayOfWeek.value // 1 (Mon) .. 7 (Sun)
-        val minuteOfDay = callTime.hour * 60 + callTime.minute
-
-        // 2. Explicit Allowed List (Whitelist) has top priority
-        if (caller.isAllowedList) {
-            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.ALLOWED_NUMBER }
-            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay) ?: CallAction.ALLOW
-            return DecisionResult(
-                action = resolvedAction,
-                reason = "Caller is in Allowed list",
-                matchedCategoryId = SystemCategories.ALLOWED_NUMBER,
+        fun result(action: CallAction, reason: String, categoryId: String? = null) =
+            DecisionResult(
+                action = action,
+                reason = reason,
+                matchedCategoryId = categoryId,
                 evaluationTimeMs = System.currentTimeMillis() - start
             )
-        }
 
-        // 3. Explicit Blocked List (Blacklist) has second priority
+        // Global Blacklist always drops
         if (caller.isBlockedList) {
-            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.BLOCKED_NUMBER }
-            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay) ?: CallAction.REJECT
-            return DecisionResult(
-                action = resolvedAction,
-                reason = "Caller is in Blocked list",
-                matchedCategoryId = SystemCategories.BLOCKED_NUMBER,
-                evaluationTimeMs = System.currentTimeMillis() - start
-            )
+            return result(CallAction.REJECT, "در لیست مسدود", SystemCategories.BLOCKED_NUMBER)
         }
 
-        // 4. Custom User-Created Categories Check (sorted by rule priority descending)
-        if (caller.customCategoryIds.isNotEmpty()) {
-            val matchingRules = activeMode.rules
-                .filter { it.categoryId in caller.customCategoryIds }
-                .sortedByDescending { it.priority }
-
-            for (rule in matchingRules) {
-                val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay)
-                if (resolvedAction != null) {
-                    return DecisionResult(
-                        action = resolvedAction,
-                        reason = "Caller matched custom user category: ${rule.categoryId} (Action: $resolvedAction)",
-                        matchedCategoryId = rule.categoryId,
-                        evaluationTimeMs = System.currentTimeMillis() - start
-                    )
-                }
+        // 1. Private / Unknown caller ID
+        if (caller.isPrivateOrUnknown) {
+            val privateAction = activeMode.getCategoryAction(SystemCategories.PRIVATE)
+            return if (privateAction != null) {
+                result(privateAction, "سیاست صریح شماره مخفی: $privateAction", SystemCategories.PRIVATE)
+            } else {
+                result(activeMode.defaultAction, "شماره مخفی / پیش‌فرض حالت", SystemCategories.PRIVATE)
             }
         }
 
-        // 5. Favorite Contact Check
-        if (caller.isFavorite) {
-            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.FAVORITE }
-            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay)
-            if (resolvedAction != null) {
-                return DecisionResult(
-                    action = resolvedAction,
-                    reason = "Caller is a favorite contact",
-                    matchedCategoryId = SystemCategories.FAVORITE,
-                    evaluationTimeMs = System.currentTimeMillis() - start
-                )
+        // 2. Specific Number Groups (Allowed list, Favorite, Custom Groups)
+        val numberGroupIds = buildSet {
+            if (caller.isAllowedList) add(SystemCategories.ALLOWED_NUMBER)
+            if (caller.isFavorite) add(SystemCategories.FAVORITE)
+            addAll(caller.customCategoryIds)
+        }
+
+        // Find highest priority matching group that has an explicit policy in this mode
+        for (groupId in numberGroupIds) {
+            val action = activeMode.getCategoryAction(groupId)
+            if (action != null) {
+                return result(action, "قانون گروه در حالت «${activeMode.name}»: $action", groupId)
             }
         }
 
-        // 6. General Contact Check
+        // 3. Virtual Contact Group
         if (caller.isContact) {
-            val rule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.CONTACT }
-            val resolvedAction = resolveRuleAction(rule, dayOfWeekValue, minuteOfDay)
-            if (resolvedAction != null) {
-                return DecisionResult(
-                    action = resolvedAction,
-                    reason = "Caller is in contacts",
-                    matchedCategoryId = SystemCategories.CONTACT,
-                    evaluationTimeMs = System.currentTimeMillis() - start
-                )
+            val contactAction = activeMode.getCategoryAction(SystemCategories.CONTACT)
+            if (contactAction != null) {
+                return result(contactAction, "مخاطب دفترچه تلفن: $contactAction", SystemCategories.CONTACT)
             }
         }
 
-        // 7. Unknown / Non-contact / Private Number Check
-        val unknownRule = activeMode.rules.firstOrNull { it.categoryId == SystemCategories.UNKNOWN }
-        val resolvedUnknownAction = resolveRuleAction(unknownRule, dayOfWeekValue, minuteOfDay)
-        if (resolvedUnknownAction != null) {
-            return DecisionResult(
-                action = resolvedUnknownAction,
-                reason = if (caller.isPrivateOrUnknown) "Caller ID is hidden/private" else "Caller is unknown",
-                matchedCategoryId = SystemCategories.UNKNOWN,
-                evaluationTimeMs = System.currentTimeMillis() - start
-            )
+        // 4. Virtual Unknown / Non-contact Group
+        if (!caller.isContact) {
+            val unknownAction = activeMode.getCategoryAction(SystemCategories.UNKNOWN)
+            if (unknownAction != null) {
+                return result(unknownAction, "شماره ناشناس: $unknownAction", SystemCategories.UNKNOWN)
+            }
         }
 
-        // 8. Fallback to Mode's default action
-        return DecisionResult(
-            action = activeMode.defaultAction,
-            reason = "Default action of mode '${activeMode.name}'",
-            evaluationTimeMs = System.currentTimeMillis() - start
+        // 5. Fallback to Mode's default action
+        return result(
+            activeMode.defaultAction,
+            "پیش‌فرض حالت «${activeMode.name}»: ${activeMode.defaultAction}"
         )
-    }
-
-    /**
-     * Resolves the effective action of a rule given the current day and minute of day.
-     * Returns null if the rule is outside its active schedule and has no outsideScheduleAction defined.
-     */
-    private fun resolveRuleAction(rule: CallRule?, dayOfWeekValue: Int, minuteOfDay: Int): CallAction? {
-        if (rule == null) return null
-        if (!rule.schedule.isEnabled) return rule.action
-
-        val isInside = rule.schedule.isMatching(dayOfWeekValue, minuteOfDay)
-        return if (isInside) {
-            rule.action
-        } else {
-            rule.schedule.outsideScheduleAction
-        }
     }
 }
